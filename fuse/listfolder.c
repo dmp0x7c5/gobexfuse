@@ -37,11 +37,49 @@ and "xfer" stands for "transfer"
 static GObex *obex = NULL;
 static GMainLoop *main_loop = NULL;
 
+static void xml_element(GMarkupParseContext *ctxt,
+			const gchar *element,
+			const gchar **names,
+			const gchar **values,
+			gpointer user_data,
+			GError **gerr)
+{
+	gchar *key;
+	gint i;
+
+	if (strcasecmp("file", element) != 0 && strcasecmp("folder", element) != 0)
+		return;
+	g_print("%s ", element);
+
+	i = 0;
+	for (key = (gchar *) names[i]; key; key = (gchar *) names[++i]) {
+		if (g_str_equal("size", key) == TRUE) {
+			guint64 size;
+			size = g_ascii_strtoll(values[i], NULL, 10);
+			g_print( "size:%d ", (int)size);
+		} else
+			g_print( "%s:%s ", key, values[i]);
+	}
+	g_print("\n");
+
+}
+
+static const GMarkupParser parser = {
+	xml_element,
+	NULL,
+	NULL,
+	NULL,
+	NULL
+};
 
 static gboolean data_consumer (const void *buf, gsize len, gpointer user_data)
 {
-	g_print("data_consumer data:(%d):%s\n", (int)len, (char*)buf);
-	
+	GMarkupParseContext *ctxt;
+
+	ctxt = g_markup_parse_context_new(&parser, 0, NULL, NULL);
+	g_markup_parse_context_parse(ctxt, buf, len, NULL);
+	g_markup_parse_context_free(ctxt);
+
 	return TRUE;
 }
 
