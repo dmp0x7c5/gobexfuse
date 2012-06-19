@@ -57,6 +57,12 @@ static void xml_element(GMarkupParseContext *ctxt,
 			guint64 size;
 			size = g_ascii_strtoll(values[i], NULL, 10);
 			g_print( "size:%d ", (int)size);
+		} if (g_str_equal("created", key) == TRUE) {
+			GTimeVal time;
+			GDateTime *datetime;
+			gboolean status = g_time_val_from_iso8601(values[i], &time);
+			datetime = g_date_time_new_from_timeval_utc(&time);
+			g_print( "date:(%s) ", (char*)g_date_time_format(datetime, "%F %T" ));
 		} else
 			g_print( "%s:%s ", key, values[i]);
 	}
@@ -75,6 +81,7 @@ static const GMarkupParser parser = {
 static gboolean data_consumer (const void *buf, gsize len, gpointer user_data)
 {
 	GMarkupParseContext *ctxt;
+	g_print("data consumer:(%d)\n%s\n--end--\n", (int)len, (char*)buf);
 
 	ctxt = g_markup_parse_context_new(&parser, 0, NULL, NULL);
 	g_markup_parse_context_parse(ctxt, buf, len, NULL);
@@ -91,6 +98,15 @@ static void get_complete(GObex *obex, GError *err, gpointer user_data)
 		g_print("get succeeded\n");
 }
 
+static void setpath_complete(GObex *obex, GError *err, GObexPacket *rsp,
+							gpointer user_data)
+{
+	if (err != NULL)
+		g_print("setpath fail: %s\n", err->message);
+	else
+		g_print("setpath succeeded\n");
+}
+
 static void conn_complete(GObex *obex, GError *err, GObexPacket *rsp,
 							gpointer user_data)
 {
@@ -101,6 +117,9 @@ static void conn_complete(GObex *obex, GError *err, GObexPacket *rsp,
 		g_print("Connect failed: %s\n", err->message);
 	else
 		g_print("Connect succeeded\n");
+
+	g_obex_setpath(obex, "Phone memory", setpath_complete, NULL, NULL);
+	g_obex_setpath(obex, "Music", setpath_complete, NULL, NULL);
 
 
 	// get filelist:
@@ -153,10 +172,10 @@ int main(int argc, char *argv[]) {
 	GError *err = NULL;
 
 	// hard coded two phones
-	uint16_t port = 5;
-	char dststr[] = "18:87:96:4D:F0:9F";
-	//uint16_t port = 7;
-	//char dststr[] = "00:24:EF:08:B6:32";
+	//uint16_t port = 5;
+	//char dststr[] = "18:87:96:4D:F0:9F";
+	uint16_t port = 7;
+	char dststr[] = "00:24:EF:08:B6:32";
 
 	transport = G_OBEX_TRANSPORT_STREAM;
 
