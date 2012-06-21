@@ -10,12 +10,10 @@
 #include <bluetooth/sdp.h>
 #include <bluetooth/sdp_lib.h>
 
-#include <glib.h>
-
 #define FTP_SDP_UUID "00001106-0000-1000-8000-00805f9b34fb"
 
 /* function taken from client/bluetooth.c */
-static int bt_string2uuid(uuid_t *uuid, const char *string)
+/*static int bt_string2uuid(uuid_t *uuid, const char *string)
 {
 	uint32_t data0, data4;
 	uint16_t data1, data2, data3, data5;
@@ -44,87 +42,90 @@ static int bt_string2uuid(uuid_t *uuid, const char *string)
 	}
 
 	return -1;
-}
+}*/
 
 
-
-int main(int argc, const char *argv[]) {
+int get_ftp_channel(const char *dststr)
+{
 	sdp_session_t *sdp;
 	sdp_list_t *response_list = NULL, *search_list, *attrid_list;
-	int err;
-	uint32_t range = 0x0000ffff;
 	uuid_t uuid;
-	//char dststr[] = "00:24:EF:08:B6:32";
-	char dststr[] = "18:87:96:4D:F0:9F";
 	bdaddr_t dst;
+
+	// FTP_SDP_UUID "00001106-0000-1000-8000-00805f9b34fb"
+	uint8_t uuid_int[] = { 0, 0, 0x11, 0x06, 0, 0, 0x10, 0, 0x80,
+					0, 0, 0x80, 0x5f, 0x9b, 0x34, 0xfb };
+	uint32_t range = 0x0000ffff;
+	int channel = -1;
+	
 	str2ba(	dststr, &dst);
-
+	
 	sdp = sdp_connect( BDADDR_ANY, &dst, SDP_RETRY_IF_BUSY );
-	if( sdp == NULL) {
-		g_error("sdp connect fail\n");
-	} else {
-		g_print("sdp connect ok\n");
-	}
+	if( sdp == NULL)
+		return channel;
 
-	bt_string2uuid( &uuid, FTP_SDP_UUID);
+	//bt_string2uuid( &uuid, FTP_SDP_UUID);
+	sdp_uuid128_create(&uuid, uuid_int);
+	
 	search_list = sdp_list_append( NULL, &uuid);
 	attrid_list = sdp_list_append( NULL, &range);
 
-	err = sdp_service_search_attr_req( sdp, search_list,
-			SDP_ATTR_REQ_RANGE, attrid_list, &response_list);
+	sdp_service_search_attr_req( sdp, search_list, SDP_ATTR_REQ_RANGE,
+					attrid_list, &response_list);
 
-// SPD:
-    sdp_list_t *r = response_list;
-    int channel = -1;
+	sdp_list_t *r = response_list;
+	
+	for(;r;r = r->next) {
+		sdp_record_t *rec = (sdp_record_t*) r->data;
+		sdp_list_t *proto_list;
 
-    // go through each of the service records
-    for (; r; r = r->next ) {
-        sdp_record_t *rec = (sdp_record_t*) r->data;
-        sdp_list_t *proto_list;
-        
-        // get a list of the protocol sequences
-        if( sdp_get_access_protos( rec, &proto_list ) == 0 ) {
-        sdp_list_t *p = proto_list;
-
-        // go through each protocol sequence
-        for( ; p ; p = p->next ) {
-            sdp_list_t *pds = (sdp_list_t*)p->data;
-
-            // go through each protocol list of the protocol sequence
-            for( ; pds ; pds = pds->next ) {
-
-                // check the protocol attributes
-                sdp_data_t *d = (sdp_data_t*)pds->data;
-                int proto = 0;
-                for( ; d; d = d->next ) {
-                    switch( d->dtd ) { 
-                        case SDP_UUID16:
-                        case SDP_UUID32:
-                        case SDP_UUID128:
-                            proto = sdp_uuid_to_proto( &d->val.uuid );
-                            break;
-                        case SDP_UINT8:
-                            if( proto == RFCOMM_UUID ) {
-				channel = d->val.int8; 
-			    }
-                            break;
-                    }
-                }
-            }
-            sdp_list_free( (sdp_list_t*)p->data, 0 );
-        }
-        sdp_list_free( proto_list, 0 );
-
-        }
-
-        printf("found service record 0x%x\n", rec->handle);
-        sdp_record_free( rec );
-    }
-	if( channel == -1) {
-		g_error("FTP service not found");
+		// get a list of the protocol sequences
+		if(sdp_get_access_protos( rec, &proto_list ) == 0) {
+			sdp_list_t *p = proto_list;
+			// go through each protocol sequence
+			for(;p;p = p->next) {
+				sdp_list_t *pds = (sdp_list_t*)p->data;
+				// go through each protocol list of the protocol sequence
+				for(;pds;pds = pds->next) {
+					 // check the protocol attributes
+					sdp_data_t *d = (sdp_data_t*)pds->data;
+					int proto = 0;
+					for(;d;d=d->next) {
+						switch(d->dtd) { 
+						case SDP_UUID16:
+						case SDP_UUID32:
+						case SDP_UUID128:
+							proto = sdp_uuid_to_proto(&d->val.uuid);
+						break;
+                        			case SDP_UINT8:
+                            				if(proto == RFCOMM_UUID)
+								channel = d->val.int8; 
+                            			break;
+						}
+					}
+				}
+            			sdp_list_free( (sdp_list_t*)p->data, 0);
+			}
+		sdp_list_free( proto_list, 0);
+		}
+	sdp_record_free(rec);
 	}
-	g_print("FTP channel: %d\n", channel);
-
 	sdp_close(sdp);
+
+	return channel;
+}
+
+int main(int argc, const char *argv[])
+{
+	//char dststr[] = "00:24:EF:08:B6:32";
+	char dststr[] = "18:87:96:4D:F0:9F";
+	int channel;
+
+	channel = get_ftp_channel(dststr);
+	if(channel == -1)
+		printf("FTP service not found\n");
+	else 
+		printf("FTP channel %d\n", channel);
+
 	return 0;
 }
