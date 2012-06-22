@@ -176,11 +176,14 @@ int main(int argc, char *argv[]) {
 	//char dststr[] = "18:87:96:4D:F0:9F";
 	uint16_t port = 7;
 	char dststr[] = "00:24:EF:08:B6:32";
+	//uint16_t port = 6;
+	//char dststr[] = "A8:F2:74:E9:89:C7";
 
 	transport = G_OBEX_TRANSPORT_STREAM;
 
-	/*if (port > 31) {
-		io = bt_io_connect(BT_IO_L2CAP, transport_callback, GUINT_TO_POINTER(transport),
+	if (port > 31) {
+		io = bt_io_connect(BT_IO_L2CAP, transport_callback,
+				GUINT_TO_POINTER(transport),
 				NULL, &err,
 				BT_IO_OPT_DEST_BDADDR, dststr,
 				BT_IO_OPT_PSM, port,
@@ -189,14 +192,15 @@ int main(int argc, char *argv[]) {
 				BT_IO_OPT_IMTU, BT_RX_MTU,
 				BT_IO_OPT_SEC_LEVEL, BT_IO_SEC_LOW,
 				BT_IO_OPT_INVALID);
-	} else {*/
-	io = bt_io_connect(BT_IO_RFCOMM, transport_callback, GUINT_TO_POINTER(transport),
-			NULL, &err,
-			BT_IO_OPT_DEST, dststr,
-			BT_IO_OPT_CHANNEL, port,
-			BT_IO_OPT_SEC_LEVEL, BT_IO_SEC_LOW,
-			BT_IO_OPT_INVALID);
-	//}
+	} else {
+		io = bt_io_connect(BT_IO_RFCOMM, transport_callback,
+				GUINT_TO_POINTER(transport),
+				NULL, &err,
+				BT_IO_OPT_DEST, dststr,
+				BT_IO_OPT_CHANNEL, port,
+				BT_IO_OPT_SEC_LEVEL, BT_IO_SEC_LOW,
+				BT_IO_OPT_INVALID);
+	}
 
 	if (io != NULL) {
 		g_print("io ok\n");
@@ -212,3 +216,4 @@ int main(int argc, char *argv[]) {
 
 	exit(EXIT_SUCCESS);
 }
+

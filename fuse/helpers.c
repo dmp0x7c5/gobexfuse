@@ -1,51 +1,36 @@
-// compile: gcc getftpchannel.c -o getftpchannel -lbluetooth
 
+#include <stdlib.h>
 #include <stdio.h>
 
-// "An Introduction to Bluetooth Programming" - http://people.csail.mit.edu/albert/bluez-intro/ was really useful
-// also http://www.humbug.in/2010/sample-bluetooth-rfcomm-client-app-in-c/
+#include <gobex/gobex.h>
+#include <btio/btio.h>
 
+#include <glib.h>
+
+// includes for get_ftp_channel()
 #include <bluetooth/bluetooth.h>
 #include <bluetooth/rfcomm.h>
 #include <bluetooth/sdp.h>
 #include <bluetooth/sdp_lib.h>
 
-#define FTP_SDP_UUID "00001106-0000-1000-8000-00805f9b34fb"
+// from client/bluetooth.c
+#define BT_RX_MTU 32767
+#define BT_TX_MTU 32767
 
-/* function taken from client/bluetooth.c */
-/*static int bt_string2uuid(uuid_t *uuid, const char *string)
-{
-	uint32_t data0, data4;
-	uint16_t data1, data2, data3, data5;
+#define OBEX_FTP_UUID \
+	"\xF9\xEC\x7B\xC4\x95\x3C\x11\xD2\x98\x4E\x52\x54\x00\xDC\x9E\x09"
+#define OBEX_FTP_UUID_LEN 16
 
-	if (sscanf(string, "%08x-%04hx-%04hx-%04hx-%08x%04hx",
-				&data0, &data1, &data2, &data3, &data4, &data5) == 6) {
-		uint8_t val[16];
+#define OBEX_FTP_LS "x-obex/folder-listing"
 
-		data0 = g_htonl(data0);
-		data1 = g_htons(data1);
-		data2 = g_htons(data2);
-		data3 = g_htons(data3);
-		data4 = g_htonl(data4);
-		data5 = g_htons(data5);
+struct gobexhlp_data {
+	const char *target;
+	uint16_t channel;
+	GIOChannel *io;
+	GObex *obex;
+};
 
-		memcpy(&val[0], &data0, 4);
-		memcpy(&val[4], &data1, 2);
-		memcpy(&val[6], &data2, 2);
-		memcpy(&val[8], &data3, 2);
-		memcpy(&val[10], &data4, 4);
-		memcpy(&val[14], &data5, 2);
-
-		sdp_uuid128_create(uuid, val);
-
-		return 0;
-	}
-
-	return -1;
-}*/
-
-
-int get_ftp_channel(const char *dststr)
+uint16_t get_ftp_channel(const char *dststr)
 {
 	sdp_session_t *sdp;
 	sdp_list_t *response_list = NULL, *search_list, *attrid_list;
@@ -56,7 +41,7 @@ int get_ftp_channel(const char *dststr)
 	uint8_t uuid_int[] = {0, 0, 0x11, 0x06, 0, 0, 0x10, 0, 0x80,
 					0, 0, 0x80, 0x5f, 0x9b, 0x34, 0xfb};
 	uint32_t range = 0x0000ffff;
-	int channel = -1;
+	uint16_t channel = -1;
 	
 	str2ba(	dststr, &dst);
 	
@@ -115,18 +100,57 @@ int get_ftp_channel(const char *dststr)
 	return channel;
 }
 
-int main(int argc, const char *argv[])
+static void obex_callback(GObex *obex, GError *err, GObexPacket *rsp,
+							gpointer user_data)
 {
-	//char dststr[] = "00:24:EF:08:B6:32";
-	char dststr[] = "18:87:96:4D:F0:9F";
-	//char dststr[] = "A8:F2:74:E9:89:C7";
-	int channel;
+	if (err != NULL)
+		g_print("Connect failed: %s\n", err->message);
+	else
+		g_print("Connect succeeded\n");
 
-	channel = get_ftp_channel(dststr);
-	if (channel == -1)
-		printf("FTP service not found\n");
-	else 
-		printf("FTP channel %d\n", channel);
-
-	return 0;
 }
+
+static void bt_io_callback(GIOChannel *io, GError *err, gpointer user_data)
+{
+	struct gobexhlp_data *session = user_data;
+
+	if (err != NULL) {
+		g_printerr("here:%s\n", err->message);
+		return;
+	}
+
+	g_print("Bluetooth socket connected\n");
+
+	session->obex = g_obex_new(io, G_OBEX_TRANSPORT_STREAM, BT_TX_MTU, BT_RX_MTU);
+	//g_obex_set_disconnect_function(session->obex, disconn_func, NULL);
+
+	g_obex_connect(session->obex, obex_callback, NULL, NULL,
+			G_OBEX_HDR_TARGET, OBEX_FTP_UUID, OBEX_FTP_UUID_LEN,
+			G_OBEX_HDR_INVALID);
+}
+
+struct gobexhlp_data* gobexhlp_connect(const char *target)
+{
+	uint16_t channel;
+	GError *err = NULL;
+	struct gobexhlp_data *session;
+
+	session = g_try_malloc0(sizeof(*session));
+	if (session == NULL)
+		return NULL;
+
+	session->target = target;
+	session->channel = get_ftp_channel(target);
+	if (session->channel == -1)
+		return NULL;
+	
+	session->io = bt_io_connect(BT_IO_RFCOMM, bt_io_callback,
+			session, NULL, &err,
+			BT_IO_OPT_DEST, target,
+			BT_IO_OPT_CHANNEL, session->channel,
+			BT_IO_OPT_SEC_LEVEL, BT_IO_SEC_LOW,
+			BT_IO_OPT_INVALID);
+
+	return session;
+}
+
