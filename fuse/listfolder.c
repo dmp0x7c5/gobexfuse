@@ -1,19 +1,13 @@
 /* Example gobex usage */
 
-/* Notes:
- compile: 
+/* compile: 
 gcc  -I/usr/include/glib-2.0 -I/usr/lib64/glib-2.0/include -I../  ../gobex/gobex.h ../gobex/gobex.c ../gobex/gobex-defs.h ../gobex/gobex-defs.c ../gobex/gobex-packet.c ../gobex/gobex-packet.h ../gobex/gobex-header.c ../gobex/gobex-header.h ../gobex/gobex-transfer.c ../gobex/gobex-debug.h ../btio/btio.h ../btio/btio.c  listfolder.c -o listfolder -lbluetooth -lreadline -lglib-2.0
- 
- my htc: 18:87:96:4D:F0:9F 
- grep -R 'x-obex/folder-listing' *
- 
 */
 
 /*
 obc_transfer type x-obex/folder-listing
 and "xfer" stands for "transfer"
 */
-// sdptool browse 18:87:96:4D:F0:9F
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -120,20 +114,8 @@ static void conn_complete(GObex *obex, GError *err, GObexPacket *rsp,
 
 	g_obex_setpath(obex, "Phone memory", setpath_complete, NULL, NULL);
 	g_obex_setpath(obex, "Music", setpath_complete, NULL, NULL);
-
-
-	// get filelist:
-	// obc_transfer_get( type, name, filename, err)
-	// ftp.c… transfer = obc_transfer_get("x-obex/folder-listing", NULL, NULL, &err);
-	// transfer.c… transfer = obc_transfer_create(G_OBEX_OP_GET, filename, name, type); // creating obc_transfer struct
-	// transfer.c… perr = transfer_open(transfer, O_WRONLY | O_CREAT | O_TRUNC, 0600, err); // prepare local file
 	
 	req = g_obex_packet_new(G_OBEX_OP_GET, TRUE, G_OBEX_HDR_INVALID);
-
-	/*if (transfer->name != NULL)
-		g_obex_packet_add_unicode(req, G_OBEX_HDR_NAME,
-							transfer->name);
-	*/
 	g_obex_packet_add_bytes(req, G_OBEX_HDR_TYPE, OBEX_FTP_LS,
 						strlen(OBEX_FTP_LS) + 1);
 	xfer = g_obex_get_req_pkt(obex, req, data_consumer, get_complete, NULL, NULL);
@@ -171,7 +153,7 @@ int main(int argc, char *argv[]) {
 	GIOChannel *io;
 	GError *err = NULL;
 
-	// hard coded two phones
+	// hard coded three phones
 	//uint16_t port = 5;
 	//char dststr[] = "18:87:96:4D:F0:9F";
 	uint16_t port = 7;
@@ -181,7 +163,7 @@ int main(int argc, char *argv[]) {
 
 	transport = G_OBEX_TRANSPORT_STREAM;
 
-	if (port > 31) {
+	/*if (port > 31) {
 		io = bt_io_connect(BT_IO_L2CAP, transport_callback,
 				GUINT_TO_POINTER(transport),
 				NULL, &err,
@@ -192,7 +174,7 @@ int main(int argc, char *argv[]) {
 				BT_IO_OPT_IMTU, BT_RX_MTU,
 				BT_IO_OPT_SEC_LEVEL, BT_IO_SEC_LOW,
 				BT_IO_OPT_INVALID);
-	} else {
+	} else {*/
 		io = bt_io_connect(BT_IO_RFCOMM, transport_callback,
 				GUINT_TO_POINTER(transport),
 				NULL, &err,
@@ -200,7 +182,7 @@ int main(int argc, char *argv[]) {
 				BT_IO_OPT_CHANNEL, port,
 				BT_IO_OPT_SEC_LEVEL, BT_IO_SEC_LOW,
 				BT_IO_OPT_INVALID);
-	}
+	//}
 
 	if (io != NULL) {
 		g_print("io ok\n");
