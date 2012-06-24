@@ -7,13 +7,12 @@ gcc  -I/usr/include/glib-2.0 -I/usr/lib64/glib-2.0/include -I../  ../gobex/gobex
 
 static GMainLoop *main_loop = NULL;
 
-/*void *menu(gpointer user_data)
+gboolean menu(gpointer user_data)
 {
 	struct gobexhlp_data *session = user_data;
 	char cmd;
 	char cmdstr[50];
 	
-	do {
 		scanf("%c", &cmd);
 		switch (cmd) {
 		case 's':
@@ -21,14 +20,22 @@ static GMainLoop *main_loop = NULL;
 			gobexhlp_setpath(session, cmdstr);
 		break;
 		case 'l':
-			scanf("%s", cmdstr);
+			//scanf("%s", cmdstr);
 			gobexhlp_openfolder(session, cmdstr);
 		break;
+		case 'q':
+			return FALSE;
+		break;
+		case 'p':
+			g_print("pong\n");
+		break;
+		case 'Q':
+			g_main_loop_quit(main_loop);
+		break;
 		}
-	} while (cmd = 'q');
 
-	return;
-}*/
+	return TRUE;
+}
 
 int main(int argc, const char *argv[])
 {
@@ -41,31 +48,9 @@ int main(int argc, const char *argv[])
 	session = gobexhlp_connect(dststr);
 	if (session == NULL || session->io == NULL)
 		g_error("Connection to %s failed\n", dststr);
-	/*do {
-		scanf("%c", &cmd);
-		switch (cmd) {
-		case 's':
-			scanf("%s", cmdstr);
-			gobexhlp_setpath(session, cmdstr);
-		break;
-		case 'l':
-			scanf("%s", cmdstr);
-			gobexhlp_openfolder(session, cmdstr);
-		break;
-		case 'o':
-			g_print("s->obex: %d\n", (int)session->obex);
-		break;
-		case 'i':
-			g_print("s->io: %d\n", (int)session->io);
-		break;
-		case 'x':
-			g_print("s: %d\n", (int)session);
-		break;
-		}
-	} while (cmd = 'q');
-	//g_thread_new("menuthread", menu, session);*/
-
+	
 	main_loop = g_main_loop_new(NULL, FALSE);
+	g_idle_add( menu, session);
 	g_main_loop_run(main_loop);
 
 	return 0;
