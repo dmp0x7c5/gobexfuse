@@ -32,7 +32,6 @@ struct gobexhlp_data {
 	GHashTable *file_stat;
 	GList *files;
 	const char *path;
-	int foobar;
 };
 
 struct gobexhlp_data* gobexhlp_connect(const char *target);
@@ -167,7 +166,6 @@ struct gobexhlp_data* gobexhlp_connect(const char *target)
 			BT_IO_OPT_INVALID);
 	
 	session->pathdepth = 0;
-	session->foobar = 0;
 
 	//session->folder_table = g_hash_table_new( g_str_hash, g_str_equal);
 
@@ -186,14 +184,12 @@ static void response_func(GObex *obex, GError *err, GObexPacket *rsp,
 {
 	if (err != NULL)
 		g_error("%s\n", err->message);
-	g_print("responde_func\n");
 }
 
 static void complete_func(GObex *obex, GError *err, gpointer user_data)
 {
 	if (err != NULL)
 		g_error("%s\n", err->message);
-	g_print("complete_func\n");
 }
 
 
@@ -251,7 +247,6 @@ static gboolean listfolder_consumer(const void *buf, gsize len,
 {
 	GMarkupParseContext *ctxt;
 	struct gobexhlp_data *session = user_data;
-	session->foobar++;
 
 	//g_print("from(%s) data consumer:(%d)\n%s\n--end--\n", session->target,
 	//						(int)len, (char*)buf);
@@ -302,7 +297,6 @@ void gobexhlp_setpath(struct gobexhlp_data* session, const char *path)
 void gobexhlp_openfolder(struct gobexhlp_data* session, const char *path)
 {
 	GObexPacket *req;
-	g_print("openfolder %s\n", path);
 	
 	gobexhlp_setpath( session, path);
 	session->path = path;
