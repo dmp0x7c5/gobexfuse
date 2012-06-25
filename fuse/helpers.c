@@ -29,8 +29,13 @@ struct gobexhlp_data {
 	GIOChannel *io;
 	GObex *obex;
 	uint8_t pathdepth;
+	GHashTable *file_stat;
+	GList *files;
+	const char *path;
+	int foobar;
 };
 
+struct gobexhlp_data* gobexhlp_connect(const char *target);
 void gobexhlp_setpath(struct gobexhlp_data* session, const char *path);
 void gobexhlp_openfolder(struct gobexhlp_data* session, const char *path);
 
@@ -117,6 +122,7 @@ static void obex_callback(GObex *obex, GError *err, GObexPacket *rsp,
 
 static void bt_io_callback(GIOChannel *io, GError *err, gpointer user_data)
 {
+	GObex *obex;
 	struct gobexhlp_data *session = user_data;
 
 	if (err != NULL) {
@@ -125,8 +131,12 @@ static void bt_io_callback(GIOChannel *io, GError *err, gpointer user_data)
 	}
 
 	g_print("Bluetooth socket connected\n");
+	
+	g_io_channel_set_flags(session->io, G_IO_FLAG_NONBLOCK, NULL);
+	g_io_channel_set_close_on_unref(session->io, TRUE);
 
-	session->obex = g_obex_new(io, G_OBEX_TRANSPORT_STREAM, BT_TX_MTU, BT_RX_MTU);
+	obex = g_obex_new(io, G_OBEX_TRANSPORT_STREAM, BT_TX_MTU, BT_RX_MTU);
+	session->obex = g_obex_ref(obex);
 	//g_obex_set_disconnect_function(session->obex, disconn_func, NULL);
 
 	g_obex_connect(session->obex, obex_callback, session, NULL,
@@ -155,24 +165,35 @@ struct gobexhlp_data* gobexhlp_connect(const char *target)
 			BT_IO_OPT_CHANNEL, session->channel,
 			BT_IO_OPT_SEC_LEVEL, BT_IO_SEC_LOW,
 			BT_IO_OPT_INVALID);
-
+	
 	session->pathdepth = 0;
+	session->foobar = 0;
+
+	//session->folder_table = g_hash_table_new( g_str_hash, g_str_equal);
 
 	return session;
 }
 
+void gobexhlp_clear(struct gobexhlp_data* session)
+{
+	g_obex_unref(session->obex);
+	g_list_free(session->files);
+	g_free(session);
+}
 
 static void response_func(GObex *obex, GError *err, GObexPacket *rsp,
 							gpointer user_data)
 {
 	if (err != NULL)
 		g_error("%s\n", err->message);
+	g_print("responde_func\n");
 }
 
 static void complete_func(GObex *obex, GError *err, gpointer user_data)
 {
 	if (err != NULL)
 		g_error("%s\n", err->message);
+	g_print("complete_func\n");
 }
 
 
@@ -192,16 +213,23 @@ static void listfolder_xml_element(GMarkupParseContext *ctxt,
 
 	i = 0;
 	for (key = (gchar *) names[i]; key; key = (gchar *) names[++i]) {
-		if (g_str_equal("size", key) == TRUE) {
+		if (g_str_equal("name", key) == TRUE) {
+			g_print( "nejm:%s ", values[i]);
+			session->files = g_list_append(session->files,
+					g_strdup(values[i]));
+
+		} if (g_str_equal("size", key) == TRUE) {
 			guint64 size;
 			size = g_ascii_strtoll(values[i], NULL, 10);
 			g_print( "size:%d(int) ", (int)size);
+
 		} if (g_str_equal("created", key) == TRUE) {
 			GTimeVal time;
 			GDateTime *datetime;
 			gboolean status = g_time_val_from_iso8601(values[i], &time);
 			datetime = g_date_time_new_from_timeval_utc(&time);
-			g_print( "date:(%s) ", (char*)g_date_time_format(datetime, "%F %T" ));
+			g_print( "date:(%s) ",
+				(char*)g_date_time_format(datetime, "%F %T" ));
 		} else {
 			g_print( "%s:%s ", key, values[i]);
 		}
@@ -223,13 +251,21 @@ static gboolean listfolder_consumer(const void *buf, gsize len,
 {
 	GMarkupParseContext *ctxt;
 	struct gobexhlp_data *session = user_data;
+	session->foobar++;
 
 	//g_print("from(%s) data consumer:(%d)\n%s\n--end--\n", session->target,
 	//						(int)len, (char*)buf);
+	if (session->files != NULL) {
+		g_list_free(session->files);
+	}
+	session->files = g_list_alloc();
 
-	ctxt = g_markup_parse_context_new(&parser, 0, NULL, NULL);
+	ctxt = g_markup_parse_context_new(&parser, 0, session, NULL);
 	g_markup_parse_context_parse(ctxt, buf, len, NULL);
+	g_print("endofparse\n");
 	g_markup_parse_context_free(ctxt);
+
+	//g_hash_table_replace( session->folder_table, "path", files);
 
 	return TRUE;
 }
@@ -266,8 +302,10 @@ void gobexhlp_setpath(struct gobexhlp_data* session, const char *path)
 void gobexhlp_openfolder(struct gobexhlp_data* session, const char *path)
 {
 	GObexPacket *req;
+	g_print("openfolder %s\n", path);
 	
-	//gobexhlp_setpath( session, path);
+	gobexhlp_setpath( session, path);
+	session->path = path;
 
 	req = g_obex_packet_new(G_OBEX_OP_GET, TRUE, G_OBEX_HDR_INVALID);
 	g_obex_packet_add_bytes(req, G_OBEX_HDR_TYPE, OBEX_FTP_LS,
@@ -277,3 +315,20 @@ void gobexhlp_openfolder(struct gobexhlp_data* session, const char *path)
 }
 
 
+void gobexhlp_readfolder(struct gobexhlp_data* session, const char *path)
+{
+	int len, i;
+	gchar *string;
+	
+	g_print(">>> readfolder\n");
+	if ( session->path = path) {
+		len = g_list_length(session->files);
+		g_print(">>> path equals (len:%d)\n", len);
+		for (i = 1; i < len; i++) { // element for i==0 is NULL
+			string = g_list_nth_data(session->files, i);
+			g_print("%d.%s ", i, string);
+			g_free(string);
+		}
+		g_print("\n");
+	}
+}
