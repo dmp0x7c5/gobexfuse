@@ -1,4 +1,4 @@
-// compile: gcc fusetest.c -o fusetest `pkg-config fuse --cflags` `pkg-config fuse --libs` -I/usr/include/glib-2.0 -I/usr/lib64/glib-2.0/include -I../  ../gobex/gobex.h ../gobex/gobex.c ../gobex/gobex-defs.h ../gobex/gobex-defs.c ../gobex/gobex-packet.c ../gobex/gobex-packet.h ../gobex/gobex-header.c ../gobex/gobex-header.h ../gobex/gobex-transfer.c ../gobex/gobex-debug.h ../btio/btio.h ../btio/btio.c -lbluetooth -lglib-2.0
+// compile: gcc fusetest.c -o fusetest `pkg-config fuse --cflags` `pkg-config fuse --libs` -I/usr/include/glib-2.0 -I/usr/lib64/glib-2.0/include -I../  ../gobex/gobex.h ../gobex/gobex.c ../gobex/gobex-defs.h ../gobex/gobex-defs.c ../gobex/gobex-packet.c ../gobex/gobex-packet.h ../gobex/gobex-header.c ../gobex/gobex-header.h ../gobex/gobex-transfer.c ../gobex/gobex-debug.h ../btio/btio.h ../btio/btio.c -lbluetooth -lglib-2.0 -lgthread-2.0
 
 
 #define FUSE_USE_VERSION 26
@@ -18,7 +18,8 @@ static const char *hello_str = "Hello World!\n";
 static const char *hello_path = "/hello";
 
 
-void *main_loop_func() {
+gpointer main_loop_func(gpointer user_data)
+{
 
 	char dststr[] = "18:87:96:4D:F0:9F";
 	//char dststr[] = "00:24:EF:08:B6:32";
@@ -33,8 +34,9 @@ void *main_loop_func() {
 
 void* gobexfuse_init(struct fuse_conn_info *conn)
 {
-	pthread_t main_loop_thread;
-	pthread_create(&main_loop_thread, NULL, main_loop_func);
+	GThread * main_gthread;
+	g_thread_init(NULL);
+	main_gthread = g_thread_create(main_loop_func, NULL, TRUE, NULL);
 	return;
 }
 
@@ -81,8 +83,6 @@ static int gobexfuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler
 	filler(buf, ".", NULL, 0);
 	filler(buf, "..", NULL, 0);
 	
-	g_print("gobexfuse: session->obex is %x\n", (int)session->obex);
-
 	gobexhlp_openfolder( session, path);
 	if ( session->path = path) {
 		len = g_list_length(session->files);
