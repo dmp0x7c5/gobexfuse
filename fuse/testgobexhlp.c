@@ -28,12 +28,6 @@ gboolean menu()
 			scanf("%s", cmdstr);
 			gobexhlp_openfolder(session, cmdstr);
 		break;
-		case 'o':
-			g_print("session->obex: %d\n", (int)session->obex);
-		break;
-		case 'f':
-			g_print("session->foobar: %d\n", (int)session->foobar);
-		break;
 		case 'p':
 			g_print("pong\n");
 		break;
@@ -52,7 +46,8 @@ gboolean menu()
 	return TRUE;
 }
 
-void *main_loop_func() {
+gpointer main_loop_func(gpointer data)
+{
 
 	main_loop = g_main_loop_new(NULL, FALSE);
 	g_main_loop_run(main_loop);
@@ -60,19 +55,12 @@ void *main_loop_func() {
 
 int main(int argc, const char *argv[])
 {
-	pthread_t main_loop_thread, menu_thread;
-	int ret_main, ret_menu;
-	
-	ret_main = pthread_create(&main_loop_thread, NULL, main_loop_func);
-	//ret_menu = pthread_create(&menu_thread, NULL, menu);
+	GThread * main_gthread;
 
+	g_thread_init(NULL);
+	main_gthread = g_thread_create(main_loop_func, NULL, TRUE, NULL);
 	menu();
-
-	pthread_join( main_loop_thread, NULL);
-	//pthread_join( menu_thread, NULL);
-
-	//g_print("threads completed (%d,%d)\n", ret_main, ret_menu);
-
+	
 	return 0;
 }
 
