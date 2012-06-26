@@ -167,15 +167,20 @@ struct gobexhlp_data* gobexhlp_connect(const char *target)
 	
 	session->pathdepth = 0;
 
-	//session->folder_table = g_hash_table_new( g_str_hash, g_str_equal);
+	session->file_stat = g_hash_table_new( g_str_hash, g_str_equal);
 
 	return session;
+}
+
+void free_func(gpointer data)
+{
+	g_free(data);
 }
 
 void gobexhlp_clear(struct gobexhlp_data* session)
 {
 	g_obex_unref(session->obex);
-	g_list_free(session->files);
+	g_list_free_full(session->files, free_func);
 	g_free(session);
 }
 
@@ -251,7 +256,7 @@ static gboolean listfolder_consumer(const void *buf, gsize len,
 	//g_print("from(%s) data consumer:(%d)\n%s\n--end--\n", session->target,
 	//						(int)len, (char*)buf);
 	if (session->files != NULL) {
-		g_list_free(session->files);
+		g_list_free_full(session->files, free_func);
 	}
 	session->files = g_list_alloc();
 
@@ -314,14 +319,11 @@ void gobexhlp_readfolder(struct gobexhlp_data* session, const char *path)
 	int len, i;
 	gchar *string;
 	
-	g_print(">>> readfolder\n");
 	if ( session->path = path) {
 		len = g_list_length(session->files);
-		g_print(">>> path equals (len:%d)\n", len);
 		for (i = 1; i < len; i++) { // element for i==0 is NULL
 			string = g_list_nth_data(session->files, i);
 			g_print("%d.%s ", i, string);
-			g_free(string);
 		}
 		g_print("\n");
 	}

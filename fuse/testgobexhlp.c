@@ -1,5 +1,5 @@
 /* compile: 
-gcc  -I/usr/include/glib-2.0 -I/usr/lib64/glib-2.0/include -I../  ../gobex/gobex.h ../gobex/gobex.c ../gobex/gobex-defs.h ../gobex/gobex-defs.c ../gobex/gobex-packet.c ../gobex/gobex-packet.h ../gobex/gobex-header.c ../gobex/gobex-header.h ../gobex/gobex-transfer.c ../gobex/gobex-debug.h ../btio/btio.h ../btio/btio.c testgobexhlp.c -o testgobexhlp -lbluetooth -lreadline -lglib-2.0
+gcc  -I/usr/include/glib-2.0 -I/usr/lib64/glib-2.0/include -I../  ../gobex/gobex.h ../gobex/gobex.c ../gobex/gobex-defs.h ../gobex/gobex-defs.c ../gobex/gobex-packet.c ../gobex/gobex-packet.h ../gobex/gobex-header.c ../gobex/gobex-header.h ../gobex/gobex-transfer.c ../gobex/gobex-debug.h ../btio/btio.h ../btio/btio.c testgobexhlp.c -o testgobexhlp -lbluetooth -lreadline -lglib-2.0 -lgthread-2.0
 */
 
 #include "helpers.c"
@@ -8,7 +8,7 @@ gcc  -I/usr/include/glib-2.0 -I/usr/lib64/glib-2.0/include -I../  ../gobex/gobex
 static GMainLoop *main_loop = NULL;
 struct gobexhlp_data* session = NULL;
 
-gboolean menu()
+void menu()
 {
 	char cmd = ' ';
 	char cmdstr[50];
@@ -37,13 +37,13 @@ gboolean menu()
 					TRUE ? "true" : "false");
 		break;
 		case 'r':
+			g_print(">>> listing %s\n", session->path);
 			gobexhlp_readfolder(session, cmdstr);
 		break;
 		}
 	}
-	g_main_loop_quit(main_loop);
 
-	return TRUE;
+	g_main_loop_quit(main_loop);
 }
 
 gpointer main_loop_func(gpointer data)

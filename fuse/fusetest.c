@@ -86,14 +86,10 @@ static int gobexfuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler
 	gobexhlp_openfolder( session, path);
 	if ( session->path = path) {
 		len = g_list_length(session->files);
-		//g_print(">>> path equals (len:%d)\n", len);
 		for (i = 1; i < len; i++) { // element for i==0 is NULL
 			string = g_list_nth_data(session->files, i);
 			filler(buf, string, NULL, 0);
-			//g_print("%d.%s ", i, string);
-			g_free(string);
 		}
-		//g_print("\n");
 	}
 
 	return 0;
