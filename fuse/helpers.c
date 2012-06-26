@@ -1,11 +1,10 @@
-
-#include <stdlib.h>
-#include <stdio.h>
+/* compile gcc  -I/usr/include/glib-2.0 -I/usr/lib64/glib-2.0/include -I../  ../gobex/gobex.h ../gobex/gobex.c ../gobex/gobex-defs.h ../gobex/gobex-defs.c ../gobex/gobex-packet.c ../gobex/gobex-packet.h ../gobex/gobex-header.c ../gobex/gobex-header.h ../gobex/gobex-transfer.c ../gobex/gobex-debug.h ../btio/btio.h ../btio/btio.c testgobexhlp.c -o testgobexhlp -lbluetooth -lreadline -lglib-2.0 -lgthread-2.0*/
 
 #include <gobex/gobex.h>
 #include <btio/btio.h>
 
 #include <glib.h>
+#include <fcntl.h>
 
 // includes for get_ftp_channel()
 #include <bluetooth/bluetooth.h>
@@ -143,6 +142,11 @@ static void bt_io_callback(GIOChannel *io, GError *err, gpointer user_data)
 			G_OBEX_HDR_INVALID);
 }
 
+void free_func(gpointer data)
+{
+	g_free(data);
+}
+
 struct gobexhlp_data* gobexhlp_connect(const char *target)
 {
 	uint16_t channel;
@@ -167,20 +171,18 @@ struct gobexhlp_data* gobexhlp_connect(const char *target)
 	
 	session->pathdepth = 0;
 
-	session->file_stat = g_hash_table_new( g_str_hash, g_str_equal);
+	session->file_stat = g_hash_table_new_full( g_str_hash, g_str_equal,
+					free_func, free_func);
 
 	return session;
 }
 
-void free_func(gpointer data)
-{
-	g_free(data);
-}
 
 void gobexhlp_clear(struct gobexhlp_data* session)
 {
 	g_obex_unref(session->obex);
 	g_list_free_full(session->files, free_func);
+	g_hash_table_remove_all(session->file_stat);
 	g_free(session);
 }
 
@@ -203,39 +205,54 @@ static void listfolder_xml_element(GMarkupParseContext *ctxt,
 			const gchar **values, gpointer user_data,
 			GError **gerr)
 {
-	gchar *key;
+	gchar *key, *name, *pathname;
 	gint i;
 	struct gobexhlp_data *session = user_data;
+	struct stat *stbuf;
 
-	if (strcasecmp("file", element) != 0 &&
-		strcasecmp("folder", element) != 0)
+	stbuf = g_try_malloc0(sizeof(struct stat));
+
+	if ((strcasecmp("file", element) == 0)) {
+		stbuf->st_mode = S_IFREG;
+	}
+	else if ((strcasecmp("folder", element)) == 0) {
+		stbuf->st_mode = S_IFDIR;
+	}
+	else {
 		return;
-	g_print("%s ", element);
+	}
 
 	i = 0;
 	for (key = (gchar *) names[i]; key; key = (gchar *) names[++i]) {
 		if (g_str_equal("name", key) == TRUE) {
-			g_print( "nejm:%s ", values[i]);
 			session->files = g_list_append(session->files,
 					g_strdup(values[i]));
+			name = g_strdup(values[i]); 
 
-		} if (g_str_equal("size", key) == TRUE) {
+		} else if (g_str_equal("size", key) == TRUE) {
 			guint64 size;
 			size = g_ascii_strtoll(values[i], NULL, 10);
-			g_print( "size:%d(int) ", (int)size);
+			stbuf->st_size = size;
 
-		} if (g_str_equal("created", key) == TRUE) {
+		} else if (g_str_equal("created", key) == TRUE) {
 			GTimeVal time;
 			GDateTime *datetime;
 			gboolean status = g_time_val_from_iso8601(values[i], &time);
 			datetime = g_date_time_new_from_timeval_utc(&time);
-			g_print( "date:(%s) ",
-				(char*)g_date_time_format(datetime, "%F %T" ));
-		} else {
+			stbuf->st_mtime = g_date_time_to_unix(datetime);
+			//g_print( "date:(%s) ",
+			//	(char*)g_date_time_format(datetime, "%F %T" ));
+		} /*else {
 			g_print( "%s:%s ", key, values[i]);
-		}
+		}*/
 	}
-	g_print("\n");
+	// path + / + name as a key
+	// stbuf as a data to hashtable
+	pathname = g_strdup_printf("%s/%s", session->path, name);
+	g_print("pathname: %s\n", pathname);
+	g_free(name);
+	
+	g_hash_table_replace(session->file_stat, pathname, stbuf);
 
 }
 
@@ -328,3 +345,11 @@ void gobexhlp_readfolder(struct gobexhlp_data* session, const char *path)
 		g_print("\n");
 	}
 }
+
+struct stat *gobexhlp_getattr(struct gobexhlp_data* session, const char *path)
+{
+	struct stat* stbuf;
+	stbuf = g_hash_table_lookup(session->file_stat, path);
+	return stbuf;
+}
+
