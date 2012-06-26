@@ -29,8 +29,14 @@ struct gobexhlp_data {
 	GObex *obex;
 	uint8_t pathdepth;
 	GHashTable *file_stat;
+	GHashTable *listfolder_req
 	GList *files;
 	const char *path;
+};
+
+struct gobexhlp_listfolder_req {
+	GList *files;
+	gboolean complete;
 };
 
 struct gobexhlp_data* gobexhlp_connect(const char *target);
@@ -173,6 +179,8 @@ struct gobexhlp_data* gobexhlp_connect(const char *target)
 
 	session->file_stat = g_hash_table_new_full( g_str_hash, g_str_equal,
 					free_func, free_func);
+	session->listfolder_req = g_hash_table_new_full( g_str_hash,
+				g_str_equal, free_func, free_func);
 
 	return session;
 }
@@ -183,6 +191,7 @@ void gobexhlp_clear(struct gobexhlp_data* session)
 	g_obex_unref(session->obex);
 	g_list_free_full(session->files, free_func);
 	g_hash_table_remove_all(session->file_stat);
+	g_hash_table_remove_all(session->listfolder_request);
 	g_free(session);
 }
 
@@ -217,6 +226,7 @@ static void listfolder_xml_element(GMarkupParseContext *ctxt,
 	}
 	else if ((strcasecmp("folder", element)) == 0) {
 		stbuf->st_mode = S_IFDIR;
+		stbuf->st_mtime = time(NULL);
 	}
 	else {
 		return;
@@ -240,8 +250,6 @@ static void listfolder_xml_element(GMarkupParseContext *ctxt,
 			gboolean status = g_time_val_from_iso8601(values[i], &time);
 			datetime = g_date_time_new_from_timeval_utc(&time);
 			stbuf->st_mtime = g_date_time_to_unix(datetime);
-			//g_print( "date:(%s) ",
-			//	(char*)g_date_time_format(datetime, "%F %T" ));
 		} /*else {
 			g_print( "%s:%s ", key, values[i]);
 		}*/
@@ -249,7 +257,7 @@ static void listfolder_xml_element(GMarkupParseContext *ctxt,
 	// path + / + name as a key
 	// stbuf as a data to hashtable
 	pathname = g_strdup_printf("%s/%s", session->path, name);
-	g_print("pathname: %s\n", pathname);
+	g_print("consumed: %s\n", pathname);
 	g_free(name);
 	
 	g_hash_table_replace(session->file_stat, pathname, stbuf);
@@ -270,8 +278,6 @@ static gboolean listfolder_consumer(const void *buf, gsize len,
 	GMarkupParseContext *ctxt;
 	struct gobexhlp_data *session = user_data;
 
-	//g_print("from(%s) data consumer:(%d)\n%s\n--end--\n", session->target,
-	//						(int)len, (char*)buf);
 	if (session->files != NULL) {
 		g_list_free_full(session->files, free_func);
 	}
@@ -281,8 +287,6 @@ static gboolean listfolder_consumer(const void *buf, gsize len,
 	g_markup_parse_context_parse(ctxt, buf, len, NULL);
 	g_print("endofparse\n");
 	g_markup_parse_context_free(ctxt);
-
-	//g_hash_table_replace( session->folder_table, "path", files);
 
 	return TRUE;
 }
@@ -319,9 +323,18 @@ void gobexhlp_setpath(struct gobexhlp_data* session, const char *path)
 void gobexhlp_openfolder(struct gobexhlp_data* session, const char *path)
 {
 	GObexPacket *req;
-	
+	struct gobexhlp_listfolder_req *listfolder_req;
+
 	gobexhlp_setpath( session, path);
 	session->path = path;
+	
+	// TODO free_func for gobexhlp_listfolder_req structure 
+	listfolder_req = g_try_malloc0(sizeof(*listfolder_req));
+	listfolder_req->files = g_list_alloc();
+	listfolder_req->complete = FALSE;
+
+	g_hash_table_replace(session->listfolder_req, g_strdup(path),
+						listfolder_req);
 
 	req = g_obex_packet_new(G_OBEX_OP_GET, TRUE, G_OBEX_HDR_INVALID);
 	g_obex_packet_add_bytes(req, G_OBEX_HDR_TYPE, OBEX_FTP_LS,
