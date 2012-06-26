@@ -56,9 +56,12 @@ static int gobexfuse_getattr(const char *path, struct stat *stbuf)
 	}
 	else {
 		stfile = gobexhlp_getattr(session, path);
-		if( stfile == NULL)
+		if (stfile == NULL)
 			return -ENOENT; 
-		stbuf->st_mode = stfile->st_mode | 0444;
+		if (stfile->st_mode == S_IFREG)
+			stbuf->st_mode = stfile->st_mode | 0444;
+		else // S_IFDIR
+			stbuf->st_mode = stfile->st_mode | 0755;
 		stbuf->st_nlink = 1;
 		stbuf->st_size = stfile->st_size;
 		stbuf->st_mtime = stfile->st_mtime;
@@ -76,8 +79,8 @@ static int gobexfuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler
 	int len, i;
 	gchar *string;
 
-	if(strcmp(path, "/") != 0)
-		return -ENOENT;
+	//if(strcmp(path, "/") != 0)
+	//	return -ENOENT;
 
 	filler(buf, ".", NULL, 0);
 	filler(buf, "..", NULL, 0);
