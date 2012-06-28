@@ -39,7 +39,7 @@ void* gobexfuse_init(struct fuse_conn_info *conn)
 
 void gobexfuse_destroy() 
 {
-	gobexhlp_clear(session);
+	gobexhlp_disconnect(session);
 	return;
 }
 
@@ -86,9 +86,7 @@ static int gobexfuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler
 	filler(buf, ".", NULL, 0);
 	filler(buf, "..", NULL, 0);
 	
-	gobexhlp_openfolder(session, path);
-	files = gobexhlp_readfolder(session, path);
-	
+	files = gobexhlp_listfolder(session, path);
 	len = g_list_length(files);
 	for (i = 1; i < len; i++) { // element for i==0 is NULL
 		string = g_list_nth_data(files, i);

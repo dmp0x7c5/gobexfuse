@@ -10,8 +10,11 @@ struct gobexhlp_data* session = NULL;
 
 void menu()
 {
-	char cmd = ' ';
-	char cmdstr[50];
+	gchar cmd = ' ';
+	gchar cmdstr[50];
+	GList *files;
+	guint len, i;
+	gchar *string;
 	
 	char dststr[] = "18:87:96:4D:F0:9F";
 	//char dststr[] = "00:24:EF:08:B6:32";
@@ -24,10 +27,6 @@ void menu()
 			if (session == NULL || session->io == NULL)
 				g_error("Connection to %s failed\n", dststr);
 		break;
-		case 'l':
-			scanf("%s", cmdstr);
-			gobexhlp_openfolder(session, cmdstr);
-		break;
 		case 'p':
 			g_print("pong\n");
 		break;
@@ -36,9 +35,16 @@ void menu()
 					g_main_loop_is_running(main_loop) ==
 					TRUE ? "true" : "false");
 		break;
-		case 'r':
+		case 'l':
+			scanf("%s", cmdstr);
 			g_print(">>> listing %s\n", session->path);
-			gobexhlp_readfolder_print(session, cmdstr);
+			files = gobexhlp_listfolder(session, cmdstr);
+			len = g_list_length(files);
+			for (i = 1; i < len; i++) { // element for i==0 is NULL
+				string = g_list_nth_data(files, i);
+				g_print("%d.%s ", i, string);
+			}
+	g_print("\n");
 		break;
 		}
 	}
