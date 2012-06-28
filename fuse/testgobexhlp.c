@@ -38,7 +38,7 @@ void menu()
 		break;
 		case 'r':
 			g_print(">>> listing %s\n", session->path);
-			gobexhlp_readfolder(session, cmdstr);
+			gobexhlp_readfolder_print(session, cmdstr);
 		break;
 		}
 	}

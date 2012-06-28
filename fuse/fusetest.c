@@ -78,6 +78,7 @@ static int gobexfuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler
 	
 	int len, i;
 	gchar *string;
+	GList *files;
 
 	//if(strcmp(path, "/") != 0)
 	//	return -ENOENT;
@@ -85,13 +86,13 @@ static int gobexfuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler
 	filler(buf, ".", NULL, 0);
 	filler(buf, "..", NULL, 0);
 	
-	gobexhlp_openfolder( session, path);
-	if ( session->path = path) {
-		len = g_list_length(session->files);
-		for (i = 1; i < len; i++) { // element for i==0 is NULL
-			string = g_list_nth_data(session->files, i);
-			filler(buf, string, NULL, 0);
-		}
+	gobexhlp_openfolder(session, path);
+	files = gobexhlp_readfolder(session, path);
+	
+	len = g_list_length(files);
+	for (i = 1; i < len; i++) { // element for i==0 is NULL
+		string = g_list_nth_data(files, i);
+		filler(buf, string, NULL, 0);
 	}
 
 	return 0;
