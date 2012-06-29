@@ -35,8 +35,8 @@ void* gobexfuse_init(struct fuse_conn_info *conn)
 	g_thread_init(NULL);
 	main_gthread = g_thread_create(main_loop_func, NULL, TRUE, NULL);
 	conn->async_read = 0;
-	conn->want = conn->want | FUSE_CAP_ASYNC_READ;
-	g_print("async_read: %d\n", conn->async_read);
+	conn->want &= ~FUSE_CAP_ASYNC_READ;
+
 	return;
 }
 
@@ -90,7 +90,6 @@ static int gobexfuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler
 	filler(buf, "..", NULL, 0);
 	
 	files = gobexhlp_listfolder(session, path);
-	sleep(10);
 	len = g_list_length(files);
 	for (i = 1; i < len; i++) { // element for i==0 is NULL
 		string = g_list_nth_data(files, i);
