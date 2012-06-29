@@ -38,9 +38,14 @@ struct gobexhlp_listfolder_req {
 	gboolean complete;
 };
 
+
 struct gobexhlp_data* gobexhlp_connect(const char *target);
+void gobexhlp_disconnect(struct gobexhlp_data* session);
 void gobexhlp_setpath(struct gobexhlp_data* session, const char *path);
-void gobexhlp_openfolder(struct gobexhlp_data* session, const char *path);
+GList *gobexhlp_listfolder(struct gobexhlp_data* session, const char *path);
+struct stat *gobexhlp_getattr(struct gobexhlp_data* session,
+				const char *path);
+
 
 uint16_t get_ftp_channel(const char *dststr)
 {
@@ -256,9 +261,7 @@ static void listfolder_xml_element(GMarkupParseContext *ctxt,
 			gboolean status = g_time_val_from_iso8601(values[i], &time);
 			datetime = g_date_time_new_from_timeval_utc(&time);
 			stbuf->st_mtime = g_date_time_to_unix(datetime);
-		} /*else {
-			g_print( "%s:%s ", key, values[i]);
-		}*/
+		}
 	}
 
 	if (g_str_equal("/", session->path) == TRUE)
