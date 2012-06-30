@@ -18,8 +18,8 @@ static GMainLoop *main_loop = NULL;
 gpointer main_loop_func(gpointer user_data)
 {
 
-	char dststr[] = "18:87:96:4D:F0:9F";
-	//char dststr[] = "00:24:EF:08:B6:32";
+	//char dststr[] = "18:87:96:4D:F0:9F";
+	char dststr[] = "00:24:EF:08:B6:32";
 	
 	session = gobexhlp_connect(dststr);
 	if (session == NULL || session->io == NULL)
@@ -73,6 +73,13 @@ static int gobexfuse_getattr(const char *path, struct stat *stbuf)
 	return res;
 }
 
+static int gobexfuse_mkdir(const char *path, mode_t mode)
+{
+	gobexhlp_mkdir(session, path);
+
+	return 0;
+}
+
 static int gobexfuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
                          off_t offset, struct fuse_file_info *fi)
 {
@@ -102,6 +109,7 @@ static int gobexfuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler
 static struct fuse_operations gobexfuse_oper = {
 	.getattr = gobexfuse_getattr,
 	.readdir = gobexfuse_readdir,
+	.mkdir = gobexfuse_mkdir,
 	.init = gobexfuse_init,
 	.destroy = gobexfuse_destroy,
 };
