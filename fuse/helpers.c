@@ -1,4 +1,6 @@
-/* compile gcc  -I/usr/include/glib-2.0 -I/usr/lib64/glib-2.0/include -I../  ../gobex/gobex.h ../gobex/gobex.c ../gobex/gobex-defs.h ../gobex/gobex-defs.c ../gobex/gobex-packet.c ../gobex/gobex-packet.h ../gobex/gobex-header.c ../gobex/gobex-header.h ../gobex/gobex-transfer.c ../gobex/gobex-debug.h ../btio/btio.h ../btio/btio.c testgobexhlp.c -o testgobexhlp -lbluetooth -lreadline -lglib-2.0 -lgthread-2.0*/
+/* compile:
+gcc  -I/usr/include/glib-2.0 -I/usr/lib64/glib-2.0/include -I../  ../gobex/gobex.h ../gobex/gobex.c ../gobex/gobex-defs.h ../gobex/gobex-defs.c ../gobex/gobex-packet.c ../gobex/gobex-packet.h ../gobex/gobex-header.c ../gobex/gobex-header.h ../gobex/gobex-transfer.c ../gobex/gobex-debug.h ../btio/btio.h ../btio/btio.c testgobexhlp.c -o testgobexhlp -lbluetooth -lreadline -lglib-2.0 -lgthread-2.0
+*/
 
 #include <gobex/gobex.h>
 #include <btio/btio.h>
@@ -333,6 +335,8 @@ GList *gobexhlp_listfolder(struct gobexhlp_data* session, const char *path)
 {
 	GObexPacket *req;
 	struct gobexhlp_listfolder_req *lsreq;
+	guint reqpkt, start;
+	guint timeout = 5;
 
 	session->path = path;
 	gobexhlp_setpath( session, path);
@@ -348,13 +352,21 @@ GList *gobexhlp_listfolder(struct gobexhlp_data* session, const char *path)
 	req = g_obex_packet_new(G_OBEX_OP_GET, TRUE, G_OBEX_HDR_INVALID);
 	g_obex_packet_add_bytes(req, G_OBEX_HDR_TYPE, OBEX_FTP_LS,
 						strlen(OBEX_FTP_LS) + 1);
-	g_obex_get_req_pkt(session->obex, req, listfolder_consumer, complete_func,
-							session, NULL);
-	
+
+	reqpkt = g_obex_get_req_pkt(session->obex, req, listfolder_consumer,
+					complete_func, session, NULL);
+	/*
+	 * In case of "du -sh sth" it fails, waits till timeout, probably
+	 * due to intense queries function listfolder_consumer doesn't run
+	 *  - sleep(10) between request solves issue. 
+	 */
 	g_print("(while lsreq->complete)\n");
-	while( lsreq->complete != TRUE) {
-		;
-	}
+	start = time(NULL);
+	while (lsreq->complete != TRUE)
+		if (time(NULL) > start + timeout) {
+			g_print("\nTimeout\n\n");
+			break;
+		}
 
 	return lsreq->files;
 }
