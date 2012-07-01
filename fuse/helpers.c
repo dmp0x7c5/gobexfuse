@@ -473,12 +473,18 @@ void gobexhlp_mkdir(struct gobexhlp_data* session, const char *path)
 	g_print("gobexhlp_mkdir(%s)\n", path);
 
 	gobexhlp_setpath(session, npath);
-	g_obex_mkdir(session->obex, target, response_func, NULL, NULL);
+
+	// g_obex_mkdir also sets path, to new folder
+	g_obex_mkdir(session->obex, target, response_func, NULL, NULL); 
+	g_free(session->setpath);
+	session->setpath = g_strdup(path);
+	session->pathdepth++;
 
 	stbuf = g_try_malloc0(sizeof(struct stat));
 	stbuf->st_mode = S_IFDIR;
 	stbuf->st_mtime = time(NULL);
 	g_hash_table_replace(session->file_stat, g_strdup(path), stbuf);
+	
 	
 	g_free(npath);
 	g_free(target);
