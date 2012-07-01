@@ -33,6 +33,7 @@ struct gobexhlp_data {
 	GHashTable *file_stat;
 	GHashTable *listfolder_req;
 	const char *path;
+	gchar *setpath;
 };
 
 struct gobexhlp_listfolder_req {
@@ -119,6 +120,7 @@ uint16_t get_ftp_channel(const char *dststr)
 	return channel;
 }
 
+
 static void obex_callback(GObex *obex, GError *err, GObexPacket *rsp,
 							gpointer user_data)
 {
@@ -130,6 +132,7 @@ static void obex_callback(GObex *obex, GError *err, GObexPacket *rsp,
 		g_print("Connect succeeded\n");
 
 }
+
 
 static void bt_io_callback(GIOChannel *io, GError *err, gpointer user_data)
 {
@@ -155,12 +158,14 @@ static void bt_io_callback(GIOChannel *io, GError *err, gpointer user_data)
 			G_OBEX_HDR_INVALID);
 }
 
+
 void free_listfolder_req(gpointer data)
 {
 	struct gobexhlp_listfolder_req *req = data;
 	g_list_free_full(req->files, g_free);
 	g_free(req);
 }
+
 
 struct gobexhlp_data* gobexhlp_connect(const char *target)
 {
@@ -186,12 +191,14 @@ struct gobexhlp_data* gobexhlp_connect(const char *target)
 			BT_IO_OPT_SEC_LEVEL, BT_IO_SEC_LOW,
 			BT_IO_OPT_INVALID);
 	
-	session->pathdepth = 0;
 
 	session->file_stat = g_hash_table_new_full( g_str_hash, g_str_equal,
 					g_free, g_free);
 	session->listfolder_req = g_hash_table_new_full( g_str_hash,
 				g_str_equal, g_free, free_listfolder_req);
+
+	session->pathdepth = 0;
+	session->setpath = g_strdup("/");
 
 	return session;
 }
@@ -200,11 +207,19 @@ struct gobexhlp_data* gobexhlp_connect(const char *target)
 void gobexhlp_disconnect(struct gobexhlp_data* session)
 {
 	g_print("gobexhlp_disconnect()\n");
+	
+	g_io_channel_shutdown(session->io, TRUE, NULL);
+	g_io_channel_unref(session->io);
 	g_obex_unref(session->obex);
+
 	g_hash_table_remove_all(session->file_stat);
 	g_hash_table_remove_all(session->listfolder_req);
+	g_free(session->setpath);
+
 	g_free(session);
+	session = NULL;
 }
+
 
 static void response_func(GObex *obex, GError *err, GObexPacket *rsp,
 							gpointer user_data)
@@ -212,6 +227,7 @@ static void response_func(GObex *obex, GError *err, GObexPacket *rsp,
 	if (err != NULL)
 		g_error("response_func: %s\n", err->message);
 }
+
 
 static void complete_func(GObex *obex, GError *err, gpointer user_data)
 {
@@ -272,12 +288,13 @@ static void listfolder_xml_element(GMarkupParseContext *ctxt,
 	else
 		pathname = g_strdup_printf("%s/%s", session->path, name);
 
-	g_print("consumed: %s\n", pathname);
+	g_print("%s ", pathname);
 	g_free(name);
 	
 	g_hash_table_replace(session->file_stat, pathname, stbuf);
 
 }
+
 
 static const GMarkupParser parser = {
 	listfolder_xml_element,
@@ -291,17 +308,21 @@ static gboolean listfolder_consumer(const void *buf, gsize len,
 	struct gobexhlp_data *session = user_data;
 	struct gobexhlp_listfolder_req *req;
 
-	g_print("listfolder_consumer(%s)\n",session->path);
+	/*g_print("listfolder_consumer(%s):[%d]:\n%s\n",
+				session->path, (int)len, (char*)buf);*/
 
+	g_print("listfolder_xml_element consumed: ");
 	ctxt = g_markup_parse_context_new(&parser, 0, session, NULL);
 	g_markup_parse_context_parse(ctxt, buf, len, NULL);
 	g_markup_parse_context_free(ctxt);
+	g_print("\n");
 	
 	req = g_hash_table_lookup(session->listfolder_req, session->path);
 	req->complete = TRUE;
 
 	return TRUE;
 }
+
 
 #define PATH_GET_FILE 1
 #define PATH_GET_DIRS 2
@@ -314,12 +335,10 @@ gchar *path_get_element(const char *path, uint option)
 
 	directories = g_strsplit(path, "/", -1);
 	len = g_strv_length(directories);
-
-	for (i = 0; i < len; i++) {
+	for (i = 0; i < len; i++)
 		if (directories[i][0] != '\0') { // to protect multi slashes
-			tmpstr = directories[i];
+			tmpstr = directories[i]; // last set is a file
 		}
-	}
 
 	if (option == PATH_GET_FILE)
 		retstr = g_strdup(tmpstr);
@@ -327,12 +346,15 @@ gchar *path_get_element(const char *path, uint option)
 	else if (option == PATH_GET_DIRS) {
 		for (i = len-1; i >= 0; i--) {
 			if( directories[i] == tmpstr) {
-				//g_free(directories[i]);
-				directories[i] = NULL;
+				directories[i][0] = '\0'; // remove file
 				break;
 			}
 		}
 		retstr = g_strjoinv("/", directories);
+		if (retstr[0] == '\0') {
+			g_free(retstr);
+			retstr = g_strdup("/");
+		}
 	}
 
 	g_strfreev(directories);
@@ -340,11 +362,7 @@ gchar *path_get_element(const char *path, uint option)
 	return retstr;
 }
 
-/*
- * TODO - Possibility when path leads to file
- * TODO - Add option when we are already here
- * TODO - Add function to split path and retrive filename
- */
+
 void gobexhlp_setpath(struct gobexhlp_data* session, const char *path)
 {
 	guint len, i;
@@ -352,13 +370,19 @@ void gobexhlp_setpath(struct gobexhlp_data* session, const char *path)
 	const char *setpath;
 	gchar *filename = NULL;
 
+	g_print("gobexhlp_setpath(%s)\n", path);
+	
+	if (g_strcmp0(session->setpath, path) == 0) { 
+		g_print("setpath: already here\n");
+		return;
+	}
+
 	if (path[0] == '/' && session->pathdepth > 0) {
-		g_print("[X]:setroot /\n");
-		for (i = 0; i < session->pathdepth; i++)
-			g_obex_setpath(session->obex, "..", response_func,
+		g_print("[/]:setroot /\n");
+		g_obex_setpath(session->obex, NULL, response_func,
 							NULL, NULL);
 		session->pathdepth = 0;
-		setpath = path + 1;
+		setpath = path + 1; // to pass first '/' character
 	} else {
 		setpath = path;
 	}
@@ -375,8 +399,12 @@ void gobexhlp_setpath(struct gobexhlp_data* session, const char *path)
 		}
 	}
 
+	g_free(session->setpath);
+	session->setpath = g_strdup(path);
+
 	g_strfreev(directories);
 }
+
 
 GList *gobexhlp_listfolder(struct gobexhlp_data* session, const char *path)
 {
@@ -418,6 +446,7 @@ GList *gobexhlp_listfolder(struct gobexhlp_data* session, const char *path)
 	return lsreq->files;
 }
 
+
 struct stat *gobexhlp_getattr(struct gobexhlp_data* session, const char *path)
 {
 	struct stat* stbuf;
@@ -425,27 +454,26 @@ struct stat *gobexhlp_getattr(struct gobexhlp_data* session, const char *path)
 	return stbuf;
 }
 
-/* TODO Fix because it works only for / directory */
+
 void gobexhlp_mkdir(struct gobexhlp_data* session, const char *path)
 {
 	struct stat *stbuf;
 	gchar *npath, *target;
-	stbuf = g_try_malloc0(sizeof(struct stat));
 
 	npath = path_get_element(path, PATH_GET_DIRS);
 	target = path_get_element(path, PATH_GET_FILE);
 
-	g_print("npath:%s\ntarget:%s\n", npath, target);
-
+	//g_print("npath:%s(%d)\ntarget:%s\n", npath, (int)strlen(npath), target);
 	g_print("gobexhlp_mkdir(%s)\n", path);
-	/*gobexhlp_setpath(session, path, FILE);
-	g_obex_mkdir(session->obex, path, response_func, NULL, NULL);
 
+	gobexhlp_setpath(session, npath);
+	g_obex_mkdir(session->obex, target, response_func, NULL, NULL);
+
+	stbuf = g_try_malloc0(sizeof(struct stat));
 	stbuf->st_mode = S_IFDIR;
 	stbuf->st_mtime = time(NULL);
-	
 	g_hash_table_replace(session->file_stat, g_strdup(path), stbuf);
-	*/
+	
 	g_free(npath);
 	g_free(target);
 }

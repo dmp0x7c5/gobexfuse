@@ -16,8 +16,8 @@ void menu()
 	guint len, i;
 	gchar *string;
 	
-	char dststr[] = "18:87:96:4D:F0:9F";
-	//char dststr[] = "00:24:EF:08:B6:32";
+	char dststr[] = "18:87:96:4D:F0:9F"; // HTC 
+	//char dststr[] = "00:24:EF:08:B6:32"; // SE
 	
 	while(cmd != 'Q') {
 		scanf("%c", &cmd);
@@ -26,6 +26,9 @@ void menu()
 			session = gobexhlp_connect(dststr);
 			if (session == NULL || session->io == NULL)
 				g_error("Connection to %s failed\n", dststr);
+		break;
+		case 'd':
+			gobexhlp_disconnect(session);
 		break;
 		case 'p':
 			g_print("pong\n");
@@ -37,13 +40,21 @@ void menu()
 		break;
 		case 'l':
 			scanf("%s", cmdstr);
-			g_print(">>> listing %s\n", session->path);
+			g_print(">>> listing %s\n", cmdstr);
 			files = gobexhlp_listfolder(session, cmdstr);
 			len = g_list_length(files);
 			for (i = 1; i < len; i++) { // element for i==0 is NULL
 				string = g_list_nth_data(files, i);
 				g_print("%d.%s ", i, string);
 			}
+			g_print("\n");
+		break;
+		case 'm':
+			scanf("%s", cmdstr);
+			g_print(">>> mkdir %s\n", cmdstr);
+			gobexhlp_mkdir(session, cmdstr);
+		break;
+
 	g_print("\n");
 		break;
 		}
