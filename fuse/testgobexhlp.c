@@ -54,6 +54,11 @@ void menu()
 			g_print(">>> mkdir %s\n", cmdstr);
 			gobexhlp_mkdir(session, cmdstr);
 		break;
+		case 'r':
+			scanf("%s", cmdstr);
+			g_print(">>> read %s\n", cmdstr);
+			gobexhlp_read(session, cmdstr);
+		break;
 
 	g_print("\n");
 		break;

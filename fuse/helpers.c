@@ -301,15 +301,20 @@ static const GMarkupParser parser = {
 	NULL, NULL, NULL, NULL
 };
 
-static gboolean listfolder_consumer(const void *buf, gsize len,
+static gboolean async_listfolder_consumer(const void *buf, gsize len,
 							gpointer user_data)
 {
 	GMarkupParseContext *ctxt;
 	struct gobexhlp_data *session = user_data;
 	struct gobexhlp_listfolder_req *req;
+	const char *b = buf;
+	int i;
 
-	/*g_print("listfolder_consumer(%s):[%d]:\n%s\n",
-				session->path, (int)len, (char*)buf);*/
+	g_print("async_listfolder_consumer(%s):[%d]:\n<data>\n",
+						session->path, (int)len);
+	for (i = 0; i < len; i++)
+		g_print("%c", b[i]);
+	g_print("</data>\n");
 
 	g_print("listfolder_xml_element consumed: ");
 	ctxt = g_markup_parse_context_new(&parser, 0, session, NULL);
@@ -428,12 +433,13 @@ GList *gobexhlp_listfolder(struct gobexhlp_data* session, const char *path)
 	g_obex_packet_add_bytes(req, G_OBEX_HDR_TYPE, OBEX_FTP_LS,
 						strlen(OBEX_FTP_LS) + 1);
 
-	reqpkt = g_obex_get_req_pkt(session->obex, req, listfolder_consumer,
-					complete_func, session, NULL);
+	reqpkt = g_obex_get_req_pkt(session->obex, req,
+				async_listfolder_consumer, complete_func,
+				session, NULL);
 	/*
 	 * In case of "du -sh sth" it fails, waits till timeout, probably
-	 * due to intense queries function listfolder_consumer doesn't run
-	 *  - sleep(10) between request solves issue. 
+	 * due to intense queries function aync_listfolder_consumer doesn't
+	 * run - sleep(10) between request solves issue. 
 	 */
 	g_print("(while lsreq->complete)\n");
 	start = time(NULL);
@@ -477,4 +483,41 @@ void gobexhlp_mkdir(struct gobexhlp_data* session, const char *path)
 	g_free(npath);
 	g_free(target);
 }
+
+
+static gboolean async_read_consumer(const void *buf, gsize len,
+							gpointer user_data)
+{
+	struct gobexhlp_data *session = user_data;
+	int i;
+	const char *b = buf;
+
+	g_print("async_read_consumer(%s):[%d]:\n<data>\n",
+					session->path, (int)len);
+	for (i = 0; i < len; i++)
+		g_print("%c", b[i]);
+	g_print("</data>\n");
+
+	return TRUE;
+}
+
+
+void gobexhlp_read(struct gobexhlp_data* session, const char *path)
+{
+	gchar *npath, *target;
+
+	npath = path_get_element(path, PATH_GET_DIRS);
+	target = path_get_element(path, PATH_GET_FILE);
+	gobexhlp_setpath( session, npath);
+
+	g_print("gobexhlp_read(%s:%s)\n", npath, target);
+
+	g_obex_get_req(session->obex, async_read_consumer,
+					complete_func, session, NULL,
+					G_OBEX_HDR_NAME, target,
+					G_OBEX_HDR_INVALID);
+	g_free(npath);
+	g_free(target);
+}
+
 
