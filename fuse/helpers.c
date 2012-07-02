@@ -253,7 +253,7 @@ static void listfolder_xml_element(GMarkupParseContext *ctxt,
 	struct gobexhlp_listfolder_req *req;
 	struct stat *stbuf;
 
-	stbuf = g_try_malloc0(sizeof(struct stat));
+	stbuf = g_malloc0(sizeof(struct stat));
 
 	if ((strcasecmp("file", element) == 0)) {
 		stbuf->st_mode = S_IFREG;
@@ -431,7 +431,7 @@ GList *gobexhlp_listfolder(struct gobexhlp_data* session, const char *path)
 
 	g_print("gobexhlp_listfolder(%s)\n", path);
 	
-	lsreq = g_try_malloc0(sizeof(*lsreq));
+	lsreq = g_malloc0(sizeof(*lsreq));
 	lsreq->files = g_list_alloc();
 	lsreq->complete = FALSE;
 
@@ -499,7 +499,7 @@ void gobexhlp_mkdir(struct gobexhlp_data* session, const char *path)
 	session->setpath = g_strdup(path);
 	session->pathdepth++;
 
-	stbuf = g_try_malloc0(sizeof(struct stat));
+	stbuf = g_malloc0(sizeof(struct stat));
 	stbuf->st_mode = S_IFDIR;
 	stbuf->st_mtime = time(NULL);
 	g_hash_table_replace(session->file_stat, g_strdup(path), stbuf);
@@ -555,8 +555,8 @@ struct gobexhlp_buffer *gobexhlp_get(struct gobexhlp_data* session,
 	if (stfile == NULL)
 		return NULL;
 
-	buffer = g_try_malloc0(sizeof(*buffer));
-	buffer->data = g_try_malloc0(sizeof(char) * stfile->st_size);
+	buffer = g_malloc0(sizeof(*buffer));
+	buffer->data = g_malloc0(sizeof(char) * stfile->st_size);
 	buffer->size = stfile->st_size;
 	buffer->complete = FALSE;
 	buffer->tmpsize = 0;
