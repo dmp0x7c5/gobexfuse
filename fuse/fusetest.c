@@ -111,22 +111,27 @@ static int gobexfuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler
 	return 0;
 }
 
-/*
-static int gobexfuse_open(const char *path, struct fuse_file_info *fi) 
+
+static int gobexfuse_open(const char *path, struct fuse_file_info *fi)
 {
+	struct gobexhlp_buffer *file_buffer;
+	g_print("gobexfuse_open(%s)\n", path);
+
+	file_buffer = gobexhlp_get(session, path);
+	if (file_buffer == NULL)
+		return -ENOENT;
+	
+	fi->fh = (uint64_t)file_buffer;
+
 	return 0;
 }
-*/
+
 
 static int gobexfuse_read(const char *path, char *buf, size_t size,
 			off_t offset, struct fuse_file_info *fi)
 {
-	struct gobexhlp_buffer *file_buffer;
 	gsize asize;
-
-	file_buffer = gobexhlp_read(session, path);
-	if (file_buffer == NULL)
-		return -ENOENT;
+	struct gobexhlp_buffer *file_buffer = (struct gobexhlp_buffer*)fi->fh;
 
 	asize = file_buffer->size - offset;
 	if (asize > size) {
@@ -135,10 +140,19 @@ static int gobexfuse_read(const char *path, char *buf, size_t size,
 	
 	memcpy(buf, file_buffer->data + offset, asize);
 
+	return asize;
+}
+
+
+static int gobexfuse_release(const char *path, struct fuse_file_info *fi)
+{
+	struct gobexhlp_buffer *file_buffer = (struct gobexhlp_buffer*)fi->fh;
+	g_print("gobexfuse_release(%s)\n", path);
+	
 	g_free(file_buffer->data);
 	g_free(file_buffer);
 
-	return asize;
+	return 0;
 }
 
 
@@ -146,7 +160,9 @@ static struct fuse_operations gobexfuse_oper = {
 	.getattr = gobexfuse_getattr,
 	.readdir = gobexfuse_readdir,
 	.mkdir = gobexfuse_mkdir,
+	.open = gobexfuse_open,
 	.read = gobexfuse_read,
+	.release = gobexfuse_release,
 	.init = gobexfuse_init,
 	.destroy = gobexfuse_destroy,
 };

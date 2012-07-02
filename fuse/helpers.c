@@ -537,20 +537,20 @@ static gboolean async_read_consumer(const void *buf, gsize len,
 }
 
 
-struct gobexhlp_buffer *gobexhlp_read(struct gobexhlp_data* session,
+struct gobexhlp_buffer *gobexhlp_get(struct gobexhlp_data* session,
 						const char *path)
 {
 	gchar *npath, *target;
 	struct gobexhlp_buffer *buffer;
 	guint start;
 	struct stat *stfile;
-	guint timeout = 5;
+	guint timeout = 60;
 
 	npath = path_get_element(path, PATH_GET_DIRS);
 	target = path_get_element(path, PATH_GET_FILE);
 	gobexhlp_setpath(session, npath);
 
-	g_print("gobexhlp_read(%s:%s)\n", npath, target);
+	g_print("gobexhlp_get(%s:%s)\n", npath, target);
 	stfile = gobexhlp_getattr(session, path);
 	if (stfile == NULL)
 		return NULL;
