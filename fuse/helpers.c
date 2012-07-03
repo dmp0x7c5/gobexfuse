@@ -516,14 +516,14 @@ void gobexhlp_mkdir(struct gobexhlp_data* session, const char *path)
 }
 
 
-static gboolean async_read_consumer(const void *buf, gsize len,
+static gboolean async_get_consumer(const void *buf, gsize len,
 							gpointer user_data)
 {
 	struct gobexhlp_buffer *buffer = user_data;
 	int i;
 	const char *b = buf;
 
-	g_print("async_read_consumer():[%d]:\n", (int)len);
+	g_print("async_get_consumer():[%d]:\n", (int)len);
 	/*
 	g_print("<data>\n");
 	for (i = 0; i < len; i++)
@@ -568,7 +568,7 @@ struct gobexhlp_buffer *gobexhlp_get(struct gobexhlp_data* session,
 	buffer->edited = FALSE;
 	buffer->tmpsize = 0;
 
-	g_obex_get_req(session->obex, async_read_consumer,
+	g_obex_get_req(session->obex, async_get_consumer,
 					complete_func, buffer, NULL,
 					G_OBEX_HDR_NAME, target,
 					G_OBEX_HDR_INVALID);
@@ -586,5 +586,4 @@ struct gobexhlp_buffer *gobexhlp_get(struct gobexhlp_data* session,
 
 	return buffer;
 }
-
 

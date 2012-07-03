@@ -18,8 +18,8 @@ static GMainLoop *main_loop = NULL;
 gpointer main_loop_func(gpointer user_data)
 {
 
-	char dststr[] = "18:87:96:4D:F0:9F"; // HTC
-	//char dststr[] = "00:24:EF:08:B6:32"; // SE
+	//char dststr[] = "18:87:96:4D:F0:9F"; // HTC
+	char dststr[] = "00:24:EF:08:B6:32"; // SE
 	
 	session = gobexhlp_connect(dststr);
 	if (session == NULL || session->io == NULL)
