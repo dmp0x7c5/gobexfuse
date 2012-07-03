@@ -173,6 +173,15 @@ static int gobexfuse_write(const char *path, const char *buf, size_t size,
 }
 
 
+static int gobexfuse_truncate(const char *path, off_t offset)
+{
+	/*
+	 *  Allow to change the size of a file.
+	 */
+	return 0;
+}
+
+
 static int gobexfuse_release(const char *path, struct fuse_file_info *fi)
 {
 	int i;
@@ -184,7 +193,7 @@ static int gobexfuse_release(const char *path, struct fuse_file_info *fi)
 		g_print("TODO gobexfuse_put(%s)\n", path);
 		g_print("<data>\n");
 		g_print("%s", (char*)(file_buffer->data));
-		g_print("</data>\n");
+		g_print("\n</data>\n");
 	}
 
 	g_free(file_buffer->data);
@@ -202,6 +211,7 @@ static struct fuse_operations gobexfuse_oper = {
 	.read = gobexfuse_read,
 	.write = gobexfuse_write,
 	.release = gobexfuse_release,
+	.truncate = gobexfuse_truncate,
 	.init = gobexfuse_init,
 	.destroy = gobexfuse_destroy,
 };
