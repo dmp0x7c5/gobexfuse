@@ -34,6 +34,7 @@ struct gobexhlp_data {
 	GHashTable *listfolder_req;
 	const char *path;
 	gchar *setpath;
+	time_t last_ask;
 };
 
 struct gobexhlp_listfolder_req {
@@ -46,6 +47,7 @@ struct gobexhlp_buffer {
 	gsize tmpsize;
 	gsize size;
 	gboolean complete;
+	gboolean edited;
 };
 
 
@@ -205,6 +207,8 @@ struct gobexhlp_data* gobexhlp_connect(const char *target)
 
 	session->pathdepth = 0;
 	session->setpath = g_strdup("/");
+	// to prevent upcoming NULL check
+	session->last_ask = time(NULL)-15; 
 
 	return session;
 }
@@ -429,6 +433,7 @@ GList *gobexhlp_listfolder(struct gobexhlp_data* session, const char *path)
 	session->path = path;
 	gobexhlp_setpath( session, path);
 
+
 	g_print("gobexhlp_listfolder(%s)\n", path);
 	
 	lsreq = g_malloc0(sizeof(*lsreq));
@@ -469,12 +474,13 @@ struct stat *gobexhlp_getattr(struct gobexhlp_data* session, const char *path)
 
 	stbuf = g_hash_table_lookup(session->file_stat, path);
 
-	if (stbuf == NULL) {
+	// probably it's done automatically by fuse
+	/*if (stbuf == NULL) {
 		npath = path_get_element(path, PATH_GET_DIRS);
 		gobexhlp_listfolder(session, npath);
 		g_free(npath);
 		stbuf = g_hash_table_lookup(session->file_stat, path);
-	}
+	}*/
 
 	return stbuf;
 }
@@ -544,7 +550,7 @@ struct gobexhlp_buffer *gobexhlp_get(struct gobexhlp_data* session,
 	struct gobexhlp_buffer *buffer;
 	guint start;
 	struct stat *stfile;
-	guint timeout = 60;
+	guint timeout = 60*5;
 
 	npath = path_get_element(path, PATH_GET_DIRS);
 	target = path_get_element(path, PATH_GET_FILE);
@@ -559,6 +565,7 @@ struct gobexhlp_buffer *gobexhlp_get(struct gobexhlp_data* session,
 	buffer->data = g_malloc0(sizeof(char) * stfile->st_size);
 	buffer->size = stfile->st_size;
 	buffer->complete = FALSE;
+	buffer->edited = FALSE;
 	buffer->tmpsize = 0;
 
 	g_obex_get_req(session->obex, async_read_consumer,

@@ -65,7 +65,7 @@ static int gobexfuse_getattr(const char *path, struct stat *stbuf)
 		if (stfile == NULL)
 			return -ENOENT; 
 		if (stfile->st_mode == S_IFREG)
-			stbuf->st_mode = stfile->st_mode | 0444;
+			stbuf->st_mode = stfile->st_mode | 0666;
 		else // S_IFDIR
 			stbuf->st_mode = stfile->st_mode | 0755;
 		stbuf->st_nlink = 1;
@@ -95,6 +95,10 @@ static int gobexfuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler
 	gchar *string;
 	GList *files;
 
+	// secure intense queries
+	//while (time(NULL) < session->last_ask + 15) {
+	//	;
+	//}
 	//if(strcmp(path, "/") != 0)
 	//	return -ENOENT;
 
@@ -108,6 +112,8 @@ static int gobexfuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler
 		filler(buf, string, NULL, 0);
 	}
 
+	//session->last_ask = time(NULL);
+
 	return 0;
 }
 
@@ -118,7 +124,7 @@ static int gobexfuse_open(const char *path, struct fuse_file_info *fi)
 	g_print("gobexfuse_open(%s)\n", path);
 
 	file_buffer = gobexhlp_get(session, path);
-	if (file_buffer == NULL)
+	if (file_buffer == NULL || file_buffer->complete == FALSE)
 		return -ENOENT;
 	
 	fi->fh = (uint64_t)file_buffer;
@@ -144,11 +150,43 @@ static int gobexfuse_read(const char *path, char *buf, size_t size,
 }
 
 
+static int gobexfuse_write(const char *path, const char *buf, size_t size,
+				off_t offset, struct fuse_file_info *fi)
+{
+	gsize nsize;
+
+	struct gobexhlp_buffer *file_buffer = (struct gobexhlp_buffer*)fi->fh;
+	
+	if (file_buffer->size < offset + size) {
+		nsize = offset + size;
+		file_buffer->data = g_realloc(file_buffer->data, nsize);
+		file_buffer->size = nsize;
+	}
+	else {
+		nsize = file_buffer->size;
+	}
+	file_buffer->edited = TRUE;
+
+	memcpy(file_buffer->data + offset, buf, size);
+
+	return size;
+}
+
+
 static int gobexfuse_release(const char *path, struct fuse_file_info *fi)
 {
+	int i;
 	struct gobexhlp_buffer *file_buffer = (struct gobexhlp_buffer*)fi->fh;
 	g_print("gobexfuse_release(%s)\n", path);
 	
+	if (file_buffer->edited == TRUE) {
+		// send new file to device
+		g_print("TODO gobexfuse_put(%s)\n", path);
+		g_print("<data>\n");
+		g_print("%s", (char*)(file_buffer->data));
+		g_print("</data>\n");
+	}
+
 	g_free(file_buffer->data);
 	g_free(file_buffer);
 
@@ -162,6 +200,7 @@ static struct fuse_operations gobexfuse_oper = {
 	.mkdir = gobexfuse_mkdir,
 	.open = gobexfuse_open,
 	.read = gobexfuse_read,
+	.write = gobexfuse_write,
 	.release = gobexfuse_release,
 	.init = gobexfuse_init,
 	.destroy = gobexfuse_destroy,
