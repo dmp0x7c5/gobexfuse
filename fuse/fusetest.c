@@ -71,6 +71,12 @@ static int gobexfuse_getattr(const char *path, struct stat *stbuf)
 		stbuf->st_nlink = 1;
 		stbuf->st_size = stfile->st_size;
 		stbuf->st_mtime = stfile->st_mtime;
+		stbuf->st_atime = stfile->st_mtime;
+		stbuf->st_ctime = stfile->st_mtime;
+		stbuf->st_blksize = 512;
+		stbuf->st_blocks = (stbuf->st_size + stbuf->st_blksize)
+						/ stbuf->st_blksize;
+
 	}
 
 	return res;
@@ -190,10 +196,10 @@ static int gobexfuse_release(const char *path, struct fuse_file_info *fi)
 	
 	if (file_buffer->edited == TRUE) {
 		// send new file to device
-		g_print("TODO gobexfuse_put(%s)\n", path);
 		g_print("<data>\n");
 		g_print("%s", (char*)(file_buffer->data));
 		g_print("\n</data>\n");
+		gobexhlp_put(session, file_buffer, path);
 	}
 
 	g_free(file_buffer->data);

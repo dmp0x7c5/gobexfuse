@@ -383,16 +383,22 @@ gchar *path_get_element(const char *path, uint option)
 void gobexhlp_setpath(struct gobexhlp_data* session, const char *path)
 {
 	guint len, i;
-	gchar **directories;
+	gchar **directories, *withslash, *withslash2;
 	const char *setpath;
 	gchar *filename = NULL;
 
 	g_print("gobexhlp_setpath(%s)\n", path);
 	
-	if (g_strcmp0(session->setpath, path) == 0) { 
+	withslash = g_strdup_printf("%s/", path);
+	withslash2 = g_strdup_printf("%s/", session->setpath);
+	if (g_strcmp0(session->setpath, path) == 0 ||
+		g_strcmp0(session->setpath, withslash) == 0 || 
+		g_strcmp0(withslash2, path) == 0) { 
 		g_print("setpath: already here\n");
 		return;
 	}
+	g_free(withslash);
+	g_free(withslash2);
 
 	if (path[0] == '/' && session->pathdepth > 0) {
 		g_print("[/]:setroot /\n");
@@ -452,9 +458,9 @@ GList *gobexhlp_listfolder(struct gobexhlp_data* session, const char *path)
 	/*
 	 * In case of "du -sh sth" it fails, waits till timeout, probably
 	 * due to intense queries function aync_listfolder_consumer doesn't
-	 * run - sleep(10) between request solves issue. 
-	 * Note: Maybe intense setpath causes this freeze?
+	 * run. Maybe intense setpath causes this freeze?
 	 */
+	sleep(1);
 	g_print("(while lsreq->complete)\n");
 	start = time(NULL);
 	while (lsreq->complete != TRUE)
@@ -586,4 +592,66 @@ struct gobexhlp_buffer *gobexhlp_get(struct gobexhlp_data* session,
 
 	return buffer;
 }
+
+
+gssize async_put_consumer(void *buf, gsize len, gpointer user_data)
+{
+	gssize size;
+	struct gobexhlp_buffer *buffer = user_data;
+
+	size = buffer->size - buffer->tmpsize;
+	if (size > len) {
+		size = len;
+	}
+	
+	if (size == 0) {
+		g_print(">>> file transfered\n");
+		buffer->complete = TRUE;
+		return 0;
+	}
+
+	g_print("async_put_consumer():[%d/%d]:\n", (int)len, (int)size);
+
+	memcpy(buf, buffer->data + buffer->tmpsize, size);
+	buffer->tmpsize += size;
+
+	return size; 
+}
+
+
+void gobexhlp_put(struct gobexhlp_data* session,
+				struct gobexhlp_buffer *buffer,
+				const char *path)
+{
+	gchar *npath, *target;
+	guint start;
+	struct stat *stfile;
+	guint timeout = 60*5;
+
+	npath = path_get_element(path, PATH_GET_DIRS);
+	target = path_get_element(path, PATH_GET_FILE);
+	gobexhlp_setpath(session, npath);
+
+	g_print("gobexhlp_put(%s:%s)\n", npath, target);
+
+	buffer->tmpsize = 0;
+	buffer->complete = FALSE;
+	g_obex_put_req(session->obex, async_put_consumer,
+					complete_func, buffer, NULL,
+					G_OBEX_HDR_NAME, target,
+					G_OBEX_HDR_INVALID);
+	
+	g_free(npath);
+	g_free(target);
+	
+	g_print("(while buffer->complete)\n");
+	start = time(NULL);
+	while (buffer->complete != TRUE)
+		if (time(NULL) > start + timeout) {
+			g_print("\nTimeout\n\n");
+			break;
+		}
+
+}
+
 
