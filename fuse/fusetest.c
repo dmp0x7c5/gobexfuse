@@ -70,9 +70,8 @@ static int gobexfuse_getattr(const char *path, struct stat *stbuf)
 			stbuf->st_mode = stfile->st_mode | 0755;
 		stbuf->st_nlink = 1;
 		stbuf->st_size = stfile->st_size;
-		stbuf->st_mtime = stfile->st_mtime;
-		stbuf->st_atime = stfile->st_mtime;
-		stbuf->st_ctime = stfile->st_mtime;
+		stbuf->st_mtime = stbuf->st_atime = stbuf->st_ctime =
+			stfile->st_mtime;
 		stbuf->st_blksize = 512;
 		stbuf->st_blocks = (stbuf->st_size + stbuf->st_blksize)
 						/ stbuf->st_blksize;
@@ -94,9 +93,6 @@ static int gobexfuse_mkdir(const char *path, mode_t mode)
 static int gobexfuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
                          off_t offset, struct fuse_file_info *fi)
 {
-	(void) offset;
-	(void) fi;
-	
 	int len, i;
 	gchar *string;
 	GList *files;
@@ -208,6 +204,21 @@ static int gobexfuse_release(const char *path, struct fuse_file_info *fi)
 	return 0;
 }
 
+static int gobexfuse_utimens(const char *path, const struct timespec tv[2])
+{
+	/*
+	 * Important for mknod (touch) operation
+	 */
+	return 0;
+}
+
+
+static int gobexfuse_mknod(const char *path, mode_t mode, dev_t dev)
+{
+	gobexhlp_touch(session, path);
+	return 0;
+}
+
 
 static struct fuse_operations gobexfuse_oper = {
 	.getattr = gobexfuse_getattr,
@@ -218,6 +229,8 @@ static struct fuse_operations gobexfuse_oper = {
 	.write = gobexfuse_write,
 	.release = gobexfuse_release,
 	.truncate = gobexfuse_truncate,
+	.mknod = gobexfuse_mknod,
+	.utimens = gobexfuse_utimens,
 	.init = gobexfuse_init,
 	.destroy = gobexfuse_destroy,
 };

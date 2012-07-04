@@ -660,3 +660,20 @@ void gobexhlp_put(struct gobexhlp_data* session,
 }
 
 
+void gobexhlp_touch(struct gobexhlp_data* session, const char *path)
+{
+	struct gobexhlp_buffer *buffer;
+	struct stat *stbuf;
+
+	buffer = g_malloc0(sizeof(*buffer));
+	buffer->size = 0;
+	gobexhlp_put(session, buffer, path);
+
+	stbuf = g_malloc0(sizeof(struct stat));
+	stbuf->st_mode = S_IFREG;
+	stbuf->st_mtime = stbuf->st_ctime = stbuf->st_atime = time(NULL);
+	stbuf->st_size = 0;
+	g_hash_table_replace(session->file_stat, g_strdup(path), stbuf);
+}
+
+
