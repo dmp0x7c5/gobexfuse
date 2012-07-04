@@ -558,21 +558,27 @@ struct gobexhlp_buffer *gobexhlp_get(struct gobexhlp_data* session,
 	struct stat *stfile;
 	guint timeout = 60*5;
 
-	npath = path_get_element(path, PATH_GET_DIRS);
-	target = path_get_element(path, PATH_GET_FILE);
-	gobexhlp_setpath(session, npath);
-
-	g_print("gobexhlp_get(%s:%s)\n", npath, target);
+	g_print("gobexhlp_get(%s)\n", path);
+	
 	stfile = gobexhlp_getattr(session, path);
 	if (stfile == NULL)
 		return NULL;
-
+	
 	buffer = g_malloc0(sizeof(*buffer));
 	buffer->data = g_malloc0(sizeof(char) * stfile->st_size);
 	buffer->size = stfile->st_size;
+	buffer->tmpsize = 0;
 	buffer->complete = FALSE;
 	buffer->edited = FALSE;
-	buffer->tmpsize = 0;
+	
+	if (buffer->size == 0) {
+		buffer->complete = TRUE;
+		return buffer;
+	}
+
+	npath = path_get_element(path, PATH_GET_DIRS);
+	target = path_get_element(path, PATH_GET_FILE);
+	gobexhlp_setpath(session, npath);
 
 	g_obex_get_req(session->obex, async_get_consumer,
 					complete_func, buffer, NULL,
@@ -625,7 +631,6 @@ void gobexhlp_put(struct gobexhlp_data* session,
 {
 	gchar *npath, *target;
 	guint start;
-	struct stat *stfile;
 	guint timeout = 60*5;
 
 	npath = path_get_element(path, PATH_GET_DIRS);
