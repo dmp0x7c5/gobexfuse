@@ -1,3 +1,25 @@
+/*
+ *  OBEX Filesystem in Userspace
+ *
+ *  Copyright (C) 2012  Michał Poczwardowski <dmp0x7c5@gmail.com>
+ *
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation; either version 2 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program; if not, write to the Free Software
+ *  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+ *
+ */
+
 /* compile:
 gcc  -I/usr/include/glib-2.0 -I/usr/lib64/glib-2.0/include -I../  ../gobex/gobex.h ../gobex/gobex.c ../gobex/gobex-defs.h ../gobex/gobex-defs.c ../gobex/gobex-packet.c ../gobex/gobex-packet.h ../gobex/gobex-header.c ../gobex/gobex-header.h ../gobex/gobex-transfer.c ../gobex/gobex-debug.h ../btio/btio.h ../btio/btio.c testgobexhlp.c -o testgobexhlp -lbluetooth -lreadline -lglib-2.0 -lgthread-2.0
 */
@@ -287,7 +309,8 @@ static void listfolder_xml_element(GMarkupParseContext *ctxt,
 		} else if (g_str_equal("created", key) == TRUE) {
 			GTimeVal time;
 			GDateTime *datetime;
-			gboolean status = g_time_val_from_iso8601(values[i], &time);
+			gboolean status = g_time_val_from_iso8601(values[i],
+								&time);
 			datetime = g_date_time_new_from_timeval_utc(&time);
 			stbuf->st_mtime = g_date_time_to_unix(datetime);
 		}
