@@ -243,6 +243,13 @@ static int gobexfuse_mknod(const char *path, mode_t mode, dev_t dev)
 }
 
 
+static int gobexfuse_rename(const char *from, const char *to)
+{
+	gobexhlp_move(session, from, to);
+	return 0;
+}
+
+
 static struct fuse_operations gobexfuse_oper = {
 	.getattr = gobexfuse_getattr,
 	.readdir = gobexfuse_readdir,
@@ -254,6 +261,7 @@ static struct fuse_operations gobexfuse_oper = {
 	.truncate = gobexfuse_truncate,
 	.mknod = gobexfuse_mknod,
 	.utimens = gobexfuse_utimens,
+	.rename = gobexfuse_rename,
 	.init = gobexfuse_init,
 	.destroy = gobexfuse_destroy,
 };

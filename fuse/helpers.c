@@ -700,3 +700,29 @@ void gobexhlp_touch(struct gobexhlp_data* session, const char *path)
 }
 
 
+/*
+ * Currently after rename, HTC doesn't send any response.
+ * SE does nothing
+ */
+void gobexhlp_move(struct gobexhlp_data* session, const char *oldpath,
+		const char* newpath)
+{
+	gchar *npath, *target, *newtarget;
+
+	npath = path_get_element(oldpath, PATH_GET_DIRS);
+	target = path_get_element(oldpath, PATH_GET_FILE);
+	newtarget = path_get_element(newpath, PATH_GET_FILE);
+	
+	gobexhlp_setpath(session, npath);
+
+	//g_print("npath:%s(%d)\ntarget:%s\n", npath, (int)strlen(npath), target);
+	g_print("gobexhlp_move(%s to %s)\n", target, newtarget);
+
+	g_obex_move(session->obex, target, newtarget, response_func, NULL, NULL); 
+	
+	g_free(npath);
+	g_free(target);
+	g_free(newtarget);
+}
+
+
