@@ -719,7 +719,7 @@ void gobexhlp_move(struct gobexhlp_data* session, const char *oldpath,
 	//g_print("npath:%s(%d)\ntarget:%s\n", npath, (int)strlen(npath), target);
 	g_print("gobexhlp_move(%s to %s)\n", target, newtarget);
 
-	g_obex_move(session->obex, oldpath, newpath, response_func, NULL, NULL); 
+	g_obex_copy(session->obex, target, newtarget, response_func, NULL, NULL); 
 	
 	g_free(npath);
 	g_free(target);

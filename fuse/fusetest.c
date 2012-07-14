@@ -218,6 +218,7 @@ static int gobexfuse_release(const char *path, struct fuse_file_info *fi)
 		g_print("<data>\n");
 		g_print("%s", (char*)(file_buffer->data));
 		g_print("\n</data>\n");
+		//gobexfuse_unlink(path);
 		gobexhlp_put(session, file_buffer, path);
 	}
 
@@ -266,8 +267,9 @@ static struct fuse_operations gobexfuse_oper = {
 	.truncate = gobexfuse_truncate,
 	.mknod = gobexfuse_mknod,
 	.utimens = gobexfuse_utimens,
-//	.rename = gobexfuse_rename,
+	.rename = gobexfuse_rename,
 	.unlink = gobexfuse_unlink,
+	.rmdir = gobexfuse_unlink,
 	.init = gobexfuse_init,
 	.destroy = gobexfuse_destroy,
 };
