@@ -258,6 +258,7 @@ static void response_func(GObex *obex, GError *err, GObexPacket *rsp,
 {
 	if (err != NULL)
 		g_error("response_func: %s\n", err->message);
+	g_print("response_func complete\n");
 }
 
 
@@ -718,11 +719,38 @@ void gobexhlp_move(struct gobexhlp_data* session, const char *oldpath,
 	//g_print("npath:%s(%d)\ntarget:%s\n", npath, (int)strlen(npath), target);
 	g_print("gobexhlp_move(%s to %s)\n", target, newtarget);
 
-	g_obex_move(session->obex, target, newtarget, response_func, NULL, NULL); 
+	g_obex_move(session->obex, oldpath, newpath, response_func, NULL, NULL); 
 	
 	g_free(npath);
 	g_free(target);
 	g_free(newtarget);
+}
+
+/*
+ * Side Note:
+ * Write operation should check whether file is empty, if it is, it means
+ * that it could be a copy operation - file could be removed and then send
+ */
+
+
+void gobexhlp_delete(struct gobexhlp_data* session, const char *path)
+{
+
+	gchar *npath, *target;
+
+	npath = path_get_element(path, PATH_GET_DIRS);
+	target = path_get_element(path, PATH_GET_FILE);
+	
+	gobexhlp_setpath(session, npath);
+
+	g_print("gobexhlp_delete(%s)\n", target);
+
+	g_obex_delete(session->obex, target, response_func, NULL, NULL); 
+	
+	g_hash_table_remove(session->file_stat, path);
+
+	g_free(npath);
+	g_free(target);
 }
 
 

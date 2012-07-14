@@ -249,6 +249,11 @@ static int gobexfuse_rename(const char *from, const char *to)
 	return 0;
 }
 
+static int gobexfuse_unlink(const char *path)
+{
+	gobexhlp_delete(session, path);
+	return 0;
+}
 
 static struct fuse_operations gobexfuse_oper = {
 	.getattr = gobexfuse_getattr,
@@ -261,7 +266,8 @@ static struct fuse_operations gobexfuse_oper = {
 	.truncate = gobexfuse_truncate,
 	.mknod = gobexfuse_mknod,
 	.utimens = gobexfuse_utimens,
-	.rename = gobexfuse_rename,
+//	.rename = gobexfuse_rename,
+	.unlink = gobexfuse_unlink,
 	.init = gobexfuse_init,
 	.destroy = gobexfuse_destroy,
 };
