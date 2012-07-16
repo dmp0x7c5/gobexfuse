@@ -180,4 +180,14 @@ AM_CONDITIONAL(CLIENT, test "${enable_client}" != "no")
 
 AM_CONDITIONAL(READLINE, test "${readline_found}" = "yes")
 
+AC_ARG_ENABLE(fuse, AC_HELP_STRING([--enable-fuse],
+			[Build gobexfuse]), [
+	PKG_CHECK_MODULES(FUSE, fuse, dummy=yes,
+				      AC_MSG_ERROR(FUSE is required))
+	AC_SUBST(FUSE_CFLAGS)
+	AC_SUBST(FUSE_LIBS)
+	enable_fuse=${enableval}
+])
+AM_CONDITIONAL(FUSE, test "${enable_fuse}" != "no")
+
 AC_OUTPUT(Makefile)
