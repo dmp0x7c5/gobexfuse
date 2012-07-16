@@ -131,6 +131,16 @@ client_obex_client_SOURCES = $(gdbus_sources) $(gobex_sources) \
 client_obex_client_LDADD = @GLIB_LIBS@ @DBUS_LIBS@ @BLUEZ_LIBS@
 endif
 
+if FUSE
+noinst_PROGRAMS += fuse/fusetest
+
+fuse_fusetest_SOURCES = $(gobex_sources) $(btio_sources) \
+		fuse/fusetest.c fuse/helpers.c fuse/listfolder.c
+
+fuse_fusetest_LDADD = @GLIB_SOURCES@ @BLUEZ_LIBS@ @FUSE_LIBS@
+
+endif
+
 service_DATA = $(service_in_files:.service.in=.service)
 
 AM_CFLAGS = @BLUEZ_CFLAGS@ @EBOOK_CFLAGS@ @GTHREAD_CFLAGS@ @GLIB_CFLAGS@ \
