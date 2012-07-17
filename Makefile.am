@@ -135,10 +135,9 @@ if FUSE
 noinst_PROGRAMS += fuse/fusetest
 
 fuse_fusetest_SOURCES = $(gobex_sources) $(btio_sources) \
-		fuse/fusetest.c fuse/helpers.c fuse/listfolder.c
+		fuse/fusetest.c
 
-fuse_fusetest_LDADD = @GLIB_SOURCES@ @BLUEZ_LIBS@ @FUSE_LIBS@
-
+fuse_fusetest_LDADD = @GLIB_LIBS@ @GTHREAD_LIBS@ @BLUEZ_LIBS@ @FUSE_LIBS@ 
 endif
 
 service_DATA = $(service_in_files:.service.in=.service)
