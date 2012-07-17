@@ -56,7 +56,7 @@ struct gobexhlp_data {
 	GHashTable *listfolder_req;
 	const char *path;
 	gchar *setpath;
-	time_t last_ask;
+	// time_t last_ask;
 };
 
 struct gobexhlp_listfolder_req {
@@ -79,6 +79,7 @@ void gobexhlp_setpath(struct gobexhlp_data* session, const char *path);
 GList *gobexhlp_listfolder(struct gobexhlp_data* session, const char *path);
 struct stat *gobexhlp_getattr(struct gobexhlp_data* session,
 				const char *path);
+void gobexhlp_delete(struct gobexhlp_data* session, const char *path);
 
 
 static uint16_t get_ftp_channel(const char *dststr)
@@ -226,7 +227,7 @@ struct gobexhlp_data* gobexhlp_connect(const char *target)
 	session->pathdepth = 0;
 	session->setpath = g_strdup("/");
 	// to prevent upcoming NULL check
-	session->last_ask = time(NULL) - 15;
+	// session->last_ask = time(NULL) - 15;
 
 	return session;
 }
@@ -268,7 +269,7 @@ static void listfolder_xml_element(GMarkupParseContext *ctxt,
 			const gchar **values, gpointer user_data,
 			GError **gerr)
 {
-	gchar *key, *name, *pathname;
+	gchar *key, *pathname, *name = NULL;
 	gint i;
 	struct gobexhlp_data *session = user_data;
 	struct gobexhlp_listfolder_req *req;
@@ -352,7 +353,7 @@ static gboolean async_listfolder_consumer(const void *buf, gsize len,
 static gchar *path_get_element(const char *path, uint option)
 {
 	guint len, i;
-	gchar *tmpstr = NULL, *retstr;
+	gchar *tmpstr = NULL, *retstr = NULL;
 	gchar **directories;
 
 	directories = g_strsplit(path, "/", -1);
@@ -462,7 +463,6 @@ GList *gobexhlp_listfolder(struct gobexhlp_data* session, const char *path)
 	 * due to intense queries function aync_listfolder_consumer doesn't
 	 * run. Maybe intense setpath causes this freeze?
 	 */
-	sleep(1);
 	g_print("(while lsreq->complete)\n");
 	start = time(NULL);
 	while (lsreq->complete != TRUE)
@@ -477,7 +477,6 @@ GList *gobexhlp_listfolder(struct gobexhlp_data* session, const char *path)
 struct stat *gobexhlp_getattr(struct gobexhlp_data* session, const char *path)
 {
 	struct stat* stbuf;
-	gchar *npath;
 
 	stbuf = g_hash_table_lookup(session->file_stat, path);
 
@@ -516,8 +515,6 @@ static gboolean async_get_consumer(const void *buf, gsize len,
 							gpointer user_data)
 {
 	struct gobexhlp_buffer *buffer = user_data;
-	int i;
-	const char *b = buf;
 
 	g_print("async_get_consumer():[%d]:\n", (int)len);
 
@@ -674,7 +671,7 @@ void gobexhlp_move(struct gobexhlp_data* session, const char *oldpath,
 
 	g_print("gobexhlp_move(%s to %s)\n", target, newtarget);
 
-	g_obex_copy(session->obex, target, newtarget, response_func, NULL, NULL);
+	g_obex_move(session->obex, target, newtarget, response_func, NULL, NULL);
 
 	g_free(npath);
 	g_free(target);

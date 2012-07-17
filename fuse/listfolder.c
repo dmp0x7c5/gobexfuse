@@ -54,7 +54,7 @@ static void xml_element(GMarkupParseContext *ctxt,
 		} if (g_str_equal("created", key) == TRUE) {
 			GTimeVal time;
 			GDateTime *datetime;
-			gboolean status = g_time_val_from_iso8601(values[i], &time);
+			g_time_val_from_iso8601(values[i], &time);
 			datetime = g_date_time_new_from_timeval_utc(&time);
 			g_print( "date:(%s) ", (char*)g_date_time_format(datetime, "%F %T" ));
 		} else

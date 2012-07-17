@@ -49,8 +49,16 @@ gpointer main_loop_func(gpointer user_data)
 	
 	main_loop = g_main_loop_new(NULL, FALSE);
 	g_main_loop_run(main_loop);
+
+	return 0;
 }
 
+
+/* 
+ * TODO:
+ * g_thread_create has been deprecated since version 2.32 and should not
+ * be used in newly-written code. Use g_thread_new() instead.
+ */
 
 void* gobexfuse_init(struct fuse_conn_info *conn)
 {
@@ -59,15 +67,14 @@ void* gobexfuse_init(struct fuse_conn_info *conn)
 	main_gthread = g_thread_create(main_loop_func, NULL, TRUE, NULL);
 	conn->async_read = 0;
 	conn->want &= ~FUSE_CAP_ASYNC_READ;
-
-	return;
+	
+	return 0;
 }
 
 
 void gobexfuse_destroy() 
 {
 	gobexhlp_disconnect(session);
-	return;
 }
 
 
@@ -209,7 +216,6 @@ static int gobexfuse_truncate(const char *path, off_t offset)
 
 static int gobexfuse_release(const char *path, struct fuse_file_info *fi)
 {
-	int i;
 	struct gobexhlp_buffer *file_buffer = (struct gobexhlp_buffer*)fi->fh;
 	g_print("gobexfuse_release(%s)\n", path);
 	
