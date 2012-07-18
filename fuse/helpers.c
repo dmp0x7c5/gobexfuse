@@ -36,6 +36,9 @@ gcc  -I/usr/include/glib-2.0 -I/usr/lib64/glib-2.0/include -I../  ../gobex/gobex
 #include <bluetooth/sdp.h>
 #include <bluetooth/sdp_lib.h>
 
+// test sleep
+#include <unistd.h>
+
 // from client/bluetooth.c
 #define BT_RX_MTU 32767
 #define BT_TX_MTU 32767
@@ -45,6 +48,11 @@ gcc  -I/usr/include/glib-2.0 -I/usr/lib64/glib-2.0/include -I../  ../gobex/gobex
 #define OBEX_FTP_UUID_LEN 16
 
 #define OBEX_FTP_LS "x-obex/folder-listing"
+
+struct gobexhlp_request {
+	gchar *name;
+	gboolean complete;
+};
 
 struct gobexhlp_data {
 	const char *target;
@@ -56,12 +64,13 @@ struct gobexhlp_data {
 	GHashTable *listfolder_req;
 	const char *path;
 	gchar *setpath;
+	struct gobexhlp_request *request;
 	// time_t last_ask;
 };
 
 struct gobexhlp_listfolder_req {
 	GList *files;
-	gboolean complete;
+	//gboolean complete;
 };
 
 struct gobexhlp_buffer {
@@ -73,6 +82,7 @@ struct gobexhlp_buffer {
 };
 
 
+
 struct gobexhlp_data* gobexhlp_connect(const char *target);
 void gobexhlp_disconnect(struct gobexhlp_data* session);
 void gobexhlp_setpath(struct gobexhlp_data* session, const char *path);
@@ -81,6 +91,38 @@ struct stat *gobexhlp_getattr(struct gobexhlp_data* session,
 				const char *path);
 void gobexhlp_delete(struct gobexhlp_data* session, const char *path);
 
+
+void gobexhlp_request_new(struct gobexhlp_data *session,
+					gchar *name)
+{
+	if (session->request != NULL) {
+		g_error("Another request (%s) active!\n",
+				session->request->name);
+	}
+	session->request = g_malloc0(sizeof(*session->request));
+	session->request->name = name;
+	session->request->complete = FALSE;
+}
+
+
+void gobexhlp_request_wait_free(struct gobexhlp_data *session)
+{
+	guint start;
+	guint timeout = 20;
+	
+	g_print("WAIT for %s\n", session->request->name);
+	start = time(NULL);
+	while (session->request->complete != TRUE)
+		if (time(NULL) > start + timeout) {
+			g_print("\nTIMEOUT (%s)\n\n",
+					session->request->name);
+			break;
+		}
+
+	g_free(session->request->name);
+	g_free(session->request);
+	session->request = NULL;
+}
 
 static uint16_t get_ftp_channel(const char *dststr)
 {
@@ -201,7 +243,7 @@ struct gobexhlp_data* gobexhlp_connect(const char *target)
 	struct gobexhlp_data *session;
 
 	g_print("gobexhlp_connect()\n");
-
+	
 	session = g_try_malloc0(sizeof(*session));
 	if (session == NULL)
 		return NULL;
@@ -251,16 +293,40 @@ void gobexhlp_disconnect(struct gobexhlp_data* session)
 static void response_func(GObex *obex, GError *err, GObexPacket *rsp,
 							gpointer user_data)
 {
-	if (err != NULL)
+	struct gobexhlp_data *session = user_data;
+	
+	if (err != NULL) {
 		g_error("response_func: %s\n", err->message);
-	g_print("response_func complete\n");
+	}
+	else {
+		g_print("RESPONSED %s\n", session->request->name);
+		session->request->complete = TRUE;
+	}
 }
 
 
+static void complete_func_listfolder(GObex *obex, GError *err,
+				gpointer user_data)
+{
+	struct gobexhlp_data *session = user_data;
+
+	if (err != NULL) {
+		g_error("complete_func: %s\n", err->message);
+	}
+	else {
+		g_print("COMPLETE %s\n", session->request->name);
+		session->request->complete = TRUE;
+	}
+}
+
 static void complete_func(GObex *obex, GError *err, gpointer user_data)
 {
+	struct gobexhlp_request *buffer = user_data;
+
 	if (err != NULL)
 		g_error("complete_func: %s\n", err->message);
+	else
+		buffer->complete = TRUE;
 }
 
 
@@ -332,7 +398,7 @@ static gboolean async_listfolder_consumer(const void *buf, gsize len,
 {
 	GMarkupParseContext *ctxt;
 	struct gobexhlp_data *session = user_data;
-	struct gobexhlp_listfolder_req *req;
+	//struct gobexhlp_listfolder_req *req;
 
 	g_print("listfolder_xml_element consumed: ");
 	ctxt = g_markup_parse_context_new(&parser, 0, session, NULL);
@@ -340,8 +406,9 @@ static gboolean async_listfolder_consumer(const void *buf, gsize len,
 	g_markup_parse_context_free(ctxt);
 	g_print("\n");
 
-	req = g_hash_table_lookup(session->listfolder_req, session->path);
-	req->complete = TRUE;
+	//req = g_hash_table_lookup(session->listfolder_req, session->path);
+	//req->complete = TRUE; // moved to complete_func_listfolder
+	g_print("ASYNC_LISTFOLDER COMPLETED\n");
 
 	return TRUE;
 }
@@ -390,7 +457,6 @@ void gobexhlp_setpath(struct gobexhlp_data* session, const char *path)
 	guint len, i;
 	gchar **directories, *withslash, *withslash2;
 	const char *setpath;
-	gchar *filename = NULL;
 
 	g_print("gobexhlp_setpath(%s)\n", path);
 
@@ -407,8 +473,11 @@ void gobexhlp_setpath(struct gobexhlp_data* session, const char *path)
 
 	if (path[0] == '/' && session->pathdepth > 0) {
 		g_print("[/]:setroot /\n");
+		gobexhlp_request_new(session,
+				g_strdup_printf("setpath root"));
 		g_obex_setpath(session->obex, NULL, response_func,
-							NULL, NULL);
+							session, NULL);
+		gobexhlp_request_wait_free(session);
 		session->pathdepth = 0;
 		setpath = path + 1; // to pass first '/' character
 	} else {
@@ -420,10 +489,13 @@ void gobexhlp_setpath(struct gobexhlp_data* session, const char *path)
 	for (i = 0; i < len; i++) {
 		if (directories[i][0] != '\0') { // to protect multi slashes
 			g_print("[%d]:setpath %s\n", i, directories[i]);
+			gobexhlp_request_new(session,
+					g_strdup_printf("setpath %s",
+						directories[i]));
 			g_obex_setpath(session->obex, directories[i],
-						response_func, NULL, NULL);
+						response_func, session, NULL);
+			gobexhlp_request_wait_free(session);
 			session->pathdepth++;
-			filename = directories[i];
 		}
 	}
 
@@ -437,8 +509,8 @@ GList *gobexhlp_listfolder(struct gobexhlp_data* session, const char *path)
 {
 	GObexPacket *req;
 	struct gobexhlp_listfolder_req *lsreq;
-	guint reqpkt, start;
-	guint timeout = 5;
+	guint reqpkt; //start;
+	//guint timeout = 5;
 
 	session->path = path;
 	gobexhlp_setpath( session, path);
@@ -447,7 +519,9 @@ GList *gobexhlp_listfolder(struct gobexhlp_data* session, const char *path)
 
 	lsreq = g_malloc0(sizeof(*lsreq));
 	lsreq->files = g_list_alloc();
-	lsreq->complete = FALSE;
+	//lsreq->complete = false;
+	
+	gobexhlp_request_new(session, g_strdup_printf("listfolder %s", path));
 
 	g_hash_table_replace(session->listfolder_req, g_strdup(path), lsreq);
 
@@ -456,20 +530,23 @@ GList *gobexhlp_listfolder(struct gobexhlp_data* session, const char *path)
 						strlen(OBEX_FTP_LS) + 1);
 
 	reqpkt = g_obex_get_req_pkt(session->obex, req,
-				async_listfolder_consumer, complete_func,
+				async_listfolder_consumer,
+				complete_func_listfolder,
 				session, NULL);
 	/*
 	 * In case of "du -sh sth" it fails, waits till timeout, probably
 	 * due to intense queries function aync_listfolder_consumer doesn't
 	 * run. Maybe intense setpath causes this freeze?
 	 */
-	g_print("(while lsreq->complete)\n");
+	/*g_print("(while lsreq->complete)\n");
 	start = time(NULL);
 	while (lsreq->complete != TRUE)
 		if (time(NULL) > start + timeout) {
 			g_print("\nTimeout\n\n");
 			break;
 		}
+	*/
+	gobexhlp_request_wait_free(session);
 
 	return lsreq->files;
 }
@@ -494,9 +571,11 @@ void gobexhlp_mkdir(struct gobexhlp_data* session, const char *path)
 	g_print("gobexhlp_mkdir(%s)\n", path);
 
 	gobexhlp_setpath(session, npath);
+	
+	gobexhlp_request_new(session, g_strdup_printf("mkdir %s", path));
 
 	// g_obex_mkdir also sets path, to new folder
-	g_obex_mkdir(session->obex, target, response_func, NULL, NULL);
+	g_obex_mkdir(session->obex, target, response_func, session, NULL);
 	g_free(session->setpath);
 	session->setpath = g_strdup(path);
 	session->pathdepth++;
@@ -506,6 +585,7 @@ void gobexhlp_mkdir(struct gobexhlp_data* session, const char *path)
 	stbuf->st_mtime = time(NULL);
 	g_hash_table_replace(session->file_stat, g_strdup(path), stbuf);
 
+	gobexhlp_request_wait_free(session);
 
 	g_free(npath);
 	g_free(target);
@@ -523,7 +603,7 @@ static gboolean async_get_consumer(const void *buf, gsize len,
 
 	if (buffer->tmpsize == buffer->size) {
 		g_print(">>> file transfered\n");
-		buffer->complete = TRUE;
+		//buffer->complete = TRUE; // moved to complete_func
 	}
 
 	return TRUE;
@@ -591,7 +671,7 @@ static gssize async_put_consumer(void *buf, gsize len, gpointer user_data)
 
 	if (size == 0) {
 		g_print(">>> file transfered\n");
-		buffer->complete = TRUE;
+		//buffer->complete = TRUE; // moved to complete_func
 		return 0;
 	}
 
@@ -616,6 +696,8 @@ void gobexhlp_put(struct gobexhlp_data* session,
 	gobexhlp_setpath(session, npath);
 
 	g_print("gobexhlp_put(%s:%s)\n", npath, target);
+
+	gobexhlp_delete(session, path); // clear for the new version
 
 	buffer->tmpsize = 0;
 	buffer->complete = FALSE;
@@ -671,7 +753,11 @@ void gobexhlp_move(struct gobexhlp_data* session, const char *oldpath,
 
 	g_print("gobexhlp_move(%s to %s)\n", target, newtarget);
 
-	g_obex_move(session->obex, target, newtarget, response_func, NULL, NULL);
+	gobexhlp_request_new(session, g_strdup_printf("move %s:%s",
+				oldpath, newpath));
+	g_obex_move(session->obex, target, newtarget, response_func,
+					session, NULL);
+	gobexhlp_request_wait_free(session);
 
 	g_free(npath);
 	g_free(target);
@@ -695,7 +781,9 @@ void gobexhlp_delete(struct gobexhlp_data* session, const char *path)
 
 	g_print("gobexhlp_delete(%s)\n", target);
 
-	g_obex_delete(session->obex, target, response_func, NULL, NULL);
+	gobexhlp_request_new(session, g_strdup_printf("delete %s", path));
+	g_obex_delete(session->obex, target, response_func, session, NULL);
+	gobexhlp_request_wait_free(session);
 
 	g_hash_table_remove(session->file_stat, path);
 
