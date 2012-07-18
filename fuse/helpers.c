@@ -54,6 +54,14 @@ struct gobexhlp_request {
 	gboolean complete;
 };
 
+struct gobexhlp_buffer {
+	void *data;
+	gsize tmpsize;
+	gsize size;
+	gboolean complete;
+	gboolean edited;
+};
+
 struct gobexhlp_data {
 	const char *target;
 	uint16_t channel;
@@ -65,7 +73,10 @@ struct gobexhlp_data {
 	const char *path;
 	gchar *setpath;
 	struct gobexhlp_request *request;
+	struct gobexhlp_buffer *buffer;
 	// time_t last_ask;
+	GCond *data_cond;
+	GMutex *data_mutex;
 };
 
 struct gobexhlp_listfolder_req {
@@ -73,13 +84,6 @@ struct gobexhlp_listfolder_req {
 	//gboolean complete;
 };
 
-struct gobexhlp_buffer {
-	void *data;
-	gsize tmpsize;
-	gsize size;
-	gboolean complete;
-	gboolean edited;
-};
 
 
 
@@ -108,17 +112,21 @@ void gobexhlp_request_new(struct gobexhlp_data *session,
 void gobexhlp_request_wait_free(struct gobexhlp_data *session)
 {
 	guint start;
-	guint timeout = 20;
+	//guint timeout = 20;
 	
 	g_print("WAIT for %s\n", session->request->name);
 	start = time(NULL);
-	while (session->request->complete != TRUE)
-		if (time(NULL) > start + timeout) {
+	g_mutex_lock(session->data_mutex);
+	while (session->request->complete != TRUE) {
+		 g_cond_wait(session->data_cond, session->data_mutex);
+	}
+	g_mutex_unlock(session->data_mutex);
+	/*	if (time(NULL) > start + timeout) {
 			g_print("\nTIMEOUT (%s)\n\n",
 					session->request->name);
 			break;
 		}
-
+	*/
 	g_free(session->request->name);
 	g_free(session->request);
 	session->request = NULL;
@@ -270,6 +278,8 @@ struct gobexhlp_data* gobexhlp_connect(const char *target)
 	session->setpath = g_strdup("/");
 	// to prevent upcoming NULL check
 	// session->last_ask = time(NULL) - 15;
+	session->data_cond = g_cond_new();
+	session->data_mutex = g_mutex_new(); 
 
 	return session;
 }
@@ -294,6 +304,7 @@ static void response_func(GObex *obex, GError *err, GObexPacket *rsp,
 							gpointer user_data)
 {
 	struct gobexhlp_data *session = user_data;
+	g_mutex_lock(session->data_mutex);
 	
 	if (err != NULL) {
 		g_error("response_func: %s\n", err->message);
@@ -301,14 +312,18 @@ static void response_func(GObex *obex, GError *err, GObexPacket *rsp,
 	else {
 		g_print("RESPONSED %s\n", session->request->name);
 		session->request->complete = TRUE;
+		g_cond_signal(session->data_cond);
 	}
+
+	g_mutex_unlock(session->data_mutex);
 }
 
 
-static void complete_func_listfolder(GObex *obex, GError *err,
+static void complete_func(GObex *obex, GError *err,
 				gpointer user_data)
 {
 	struct gobexhlp_data *session = user_data;
+	g_mutex_lock(session->data_mutex);
 
 	if (err != NULL) {
 		g_error("complete_func: %s\n", err->message);
@@ -316,17 +331,10 @@ static void complete_func_listfolder(GObex *obex, GError *err,
 	else {
 		g_print("COMPLETE %s\n", session->request->name);
 		session->request->complete = TRUE;
+		g_cond_signal(session->data_cond);
 	}
-}
 
-static void complete_func(GObex *obex, GError *err, gpointer user_data)
-{
-	struct gobexhlp_request *buffer = user_data;
-
-	if (err != NULL)
-		g_error("complete_func: %s\n", err->message);
-	else
-		buffer->complete = TRUE;
+	g_mutex_unlock(session->data_mutex);
 }
 
 
@@ -407,7 +415,7 @@ static gboolean async_listfolder_consumer(const void *buf, gsize len,
 	g_print("\n");
 
 	//req = g_hash_table_lookup(session->listfolder_req, session->path);
-	//req->complete = TRUE; // moved to complete_func_listfolder
+	//req->complete = TRUE; // moved to complete_func
 	g_print("ASYNC_LISTFOLDER COMPLETED\n");
 
 	return TRUE;
@@ -531,7 +539,7 @@ GList *gobexhlp_listfolder(struct gobexhlp_data* session, const char *path)
 
 	reqpkt = g_obex_get_req_pkt(session->obex, req,
 				async_listfolder_consumer,
-				complete_func_listfolder,
+				complete_func,
 				session, NULL);
 	/*
 	 * In case of "du -sh sth" it fails, waits till timeout, probably
@@ -594,7 +602,8 @@ void gobexhlp_mkdir(struct gobexhlp_data* session, const char *path)
 static gboolean async_get_consumer(const void *buf, gsize len,
 							gpointer user_data)
 {
-	struct gobexhlp_buffer *buffer = user_data;
+	struct gobexhlp_data *session = user_data;
+	struct gobexhlp_buffer *buffer = session->buffer;
 
 	g_print("async_get_consumer():[%d]:\n", (int)len);
 
@@ -614,9 +623,9 @@ struct gobexhlp_buffer *gobexhlp_get(struct gobexhlp_data* session,
 {
 	gchar *npath, *target;
 	struct gobexhlp_buffer *buffer;
-	guint start;
+	//guint start;
 	struct stat *stfile;
-	guint timeout = 60*5;
+	//guint timeout = 60*5;
 
 	g_print("gobexhlp_get(%s)\n", path);
 
@@ -640,29 +649,33 @@ struct gobexhlp_buffer *gobexhlp_get(struct gobexhlp_data* session,
 	target = path_get_element(path, PATH_GET_FILE);
 	gobexhlp_setpath(session, npath);
 
+	gobexhlp_request_new(session, g_strdup_printf("get %s", path));
+	session->buffer = buffer;
 	g_obex_get_req(session->obex, async_get_consumer,
-					complete_func, buffer, NULL,
+					complete_func, session, NULL,
 					G_OBEX_HDR_NAME, target,
 					G_OBEX_HDR_INVALID);
+	gobexhlp_request_wait_free(session);
 
 	g_free(npath);
 	g_free(target);
 
-	g_print("(while buffer->complete)\n");
+	/*g_print("(while buffer->complete)\n");
 	start = time(NULL);
 	while (buffer->complete != TRUE)
 		if (time(NULL) > start + timeout) {
 			g_print("\nTimeout\n\n");
 			break;
 		}
-
+	*/
 	return buffer;
 }
 
 static gssize async_put_consumer(void *buf, gsize len, gpointer user_data)
 {
 	gssize size;
-	struct gobexhlp_buffer *buffer = user_data;
+	struct gobexhlp_data *session = user_data;
+	struct gobexhlp_buffer *buffer = session->buffer;
 
 	size = buffer->size - buffer->tmpsize;
 	if (size > len) {
@@ -688,8 +701,8 @@ void gobexhlp_put(struct gobexhlp_data* session,
 				const char *path)
 {
 	gchar *npath, *target;
-	guint start;
-	guint timeout = 60*5;
+	//guint start;
+	//guint timeout = 60*5;
 
 	npath = path_get_element(path, PATH_GET_DIRS);
 	target = path_get_element(path, PATH_GET_FILE);
@@ -701,22 +714,26 @@ void gobexhlp_put(struct gobexhlp_data* session,
 
 	buffer->tmpsize = 0;
 	buffer->complete = FALSE;
+
+	session->buffer = buffer;
+	gobexhlp_request_new(session, g_strdup_printf("put %s", path));
 	g_obex_put_req(session->obex, async_put_consumer,
-					complete_func, buffer, NULL,
+					complete_func, session, NULL,
 					G_OBEX_HDR_NAME, target,
 					G_OBEX_HDR_INVALID);
+	gobexhlp_request_wait_free(session);
 
 	g_free(npath);
 	g_free(target);
 
-	g_print("(while buffer->complete)\n");
+	/*g_print("(while buffer->complete)\n");
 	start = time(NULL);
 	while (buffer->complete != TRUE)
 		if (time(NULL) > start + timeout) {
 			g_print("\nTimeout\n\n");
 			break;
 		}
-
+	*/
 }
 
 void gobexhlp_touch(struct gobexhlp_data* session, const char *path)
@@ -771,7 +788,6 @@ void gobexhlp_move(struct gobexhlp_data* session, const char *oldpath,
  */
 void gobexhlp_delete(struct gobexhlp_data* session, const char *path)
 {
-
 	gchar *npath, *target;
 
 	npath = path_get_element(path, PATH_GET_DIRS);
