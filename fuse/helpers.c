@@ -76,7 +76,9 @@ struct gobexhlp_data {
 	struct gobexhlp_buffer *buffer;
 	// time_t last_ask;
 	GCond *data_cond;
+	GCond *req_cond;
 	GMutex *data_mutex;
+	GMutex *req_mutex;
 };
 
 struct gobexhlp_listfolder_req {
@@ -93,16 +95,23 @@ void gobexhlp_setpath(struct gobexhlp_data* session, const char *path);
 GList *gobexhlp_listfolder(struct gobexhlp_data* session, const char *path);
 struct stat *gobexhlp_getattr(struct gobexhlp_data* session,
 				const char *path);
-void gobexhlp_delete(struct gobexhlp_data* session, const char *path);
+void gobexhlp_delete(struct gobexhlp_data* session, const char *path,
+		gboolean delete_attr);
 
 
 void gobexhlp_request_new(struct gobexhlp_data *session,
 					gchar *name)
 {
+	g_mutex_lock(session->req_mutex);
 	if (session->request != NULL) {
-		g_error("Another request (%s) active!\n",
+		g_print("Another request (%s) active!\n",
 				session->request->name);
+		// wait till the current request ends
+		while (session->request != NULL)
+			g_cond_wait(session->req_cond, session->req_mutex);
 	}
+	g_mutex_unlock(session->req_mutex);
+
 	session->request = g_malloc0(sizeof(*session->request));
 	session->request->name = name;
 	session->request->complete = FALSE;
@@ -127,9 +136,12 @@ void gobexhlp_request_wait_free(struct gobexhlp_data *session)
 			break;
 		}
 	*/
+	g_mutex_lock(session->req_mutex);
 	g_free(session->request->name);
 	g_free(session->request);
 	session->request = NULL;
+	g_cond_signal(session->req_cond);
+	g_mutex_unlock(session->req_mutex);
 }
 
 static uint16_t get_ftp_channel(const char *dststr)
@@ -280,6 +292,8 @@ struct gobexhlp_data* gobexhlp_connect(const char *target)
 	// session->last_ask = time(NULL) - 15;
 	session->data_cond = g_cond_new();
 	session->data_mutex = g_mutex_new(); 
+	session->req_cond = g_cond_new();
+	session->req_mutex = g_mutex_new(); 
 
 	return session;
 }
@@ -710,7 +724,7 @@ void gobexhlp_put(struct gobexhlp_data* session,
 
 	g_print("gobexhlp_put(%s:%s)\n", npath, target);
 
-	gobexhlp_delete(session, path); // clear for the new version
+	gobexhlp_delete(session, path, FALSE); // clear for the new version
 
 	buffer->tmpsize = 0;
 	buffer->complete = FALSE;
@@ -721,19 +735,11 @@ void gobexhlp_put(struct gobexhlp_data* session,
 					complete_func, session, NULL,
 					G_OBEX_HDR_NAME, target,
 					G_OBEX_HDR_INVALID);
-	gobexhlp_request_wait_free(session);
 
 	g_free(npath);
 	g_free(target);
 
-	/*g_print("(while buffer->complete)\n");
-	start = time(NULL);
-	while (buffer->complete != TRUE)
-		if (time(NULL) > start + timeout) {
-			g_print("\nTimeout\n\n");
-			break;
-		}
-	*/
+	gobexhlp_request_wait_free(session);
 }
 
 void gobexhlp_touch(struct gobexhlp_data* session, const char *path)
@@ -774,11 +780,12 @@ void gobexhlp_move(struct gobexhlp_data* session, const char *oldpath,
 				oldpath, newpath));
 	g_obex_move(session->obex, target, newtarget, response_func,
 					session, NULL);
-	gobexhlp_request_wait_free(session);
 
 	g_free(npath);
 	g_free(target);
 	g_free(newtarget);
+	
+	gobexhlp_request_wait_free(session);
 }
 
 /*
@@ -786,7 +793,8 @@ void gobexhlp_move(struct gobexhlp_data* session, const char *oldpath,
  * Write operation should check whether file is empty, if it is, it means
  * that it could be a copy operation - file could be removed and then send
  */
-void gobexhlp_delete(struct gobexhlp_data* session, const char *path)
+void gobexhlp_delete(struct gobexhlp_data* session, const char *path,
+		gboolean delete_attr)
 {
 	gchar *npath, *target;
 
@@ -799,10 +807,11 @@ void gobexhlp_delete(struct gobexhlp_data* session, const char *path)
 
 	gobexhlp_request_new(session, g_strdup_printf("delete %s", path));
 	g_obex_delete(session->obex, target, response_func, session, NULL);
-	gobexhlp_request_wait_free(session);
 
-	g_hash_table_remove(session->file_stat, path);
-
+	if (delete_attr == TRUE)
+		g_hash_table_remove(session->file_stat, path);
 	g_free(npath);
 	g_free(target);
+
+	gobexhlp_request_wait_free(session);
 }
