@@ -25,27 +25,53 @@
 
 #define FUSE_USE_VERSION 26
 
-#include <fuse.h>
 #include <stdio.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <string.h>
+
+#include <fuse.h>
+#include <fuse/fuse_opt.h>
 
 #include "helpers.c"
 
 struct gobexhlp_data* session = NULL;
 static GMainLoop *main_loop = NULL;
 
+struct options {
+	char* dststr;
+} options;
+
+#define GOBEXFUSE_OPT_KEY(t, p, v) { t, offsetof(struct options, p), v }
+
+enum
+{
+   KEY_VERSION,
+   KEY_HELP,
+};
+
+static struct fuse_opt gobexfuse_opts[] =
+{
+	GOBEXFUSE_OPT_KEY("--target=%s",dststr, 0),
+	GOBEXFUSE_OPT_KEY("-t %s",	dststr, 0),
+
+	FUSE_OPT_KEY("-V",             KEY_VERSION),
+	FUSE_OPT_KEY("--version",      KEY_VERSION),
+	FUSE_OPT_KEY("-h",             KEY_HELP),
+	FUSE_OPT_KEY("--help",         KEY_HELP),
+	FUSE_OPT_END
+};
+
 
 gpointer main_loop_func(gpointer user_data)
 {
 
 	//char dststr[] = "18:87:96:4D:F0:9F"; // HTC
-	char dststr[] = "00:24:EF:08:B6:32"; // SE
+	//char dststr[] = "00:24:EF:08:B6:32"; // SE
 	
-	session = gobexhlp_connect(dststr);
+	session = gobexhlp_connect(options.dststr);
 	if (session == NULL || session->io == NULL)
-		g_error("Connection to %s failed\n", dststr);
+		g_error("Connection to %s failed\n", options.dststr);
 	
 	main_loop = g_main_loop_new(NULL, FALSE);
 	g_main_loop_run(main_loop);
@@ -64,6 +90,10 @@ void* gobexfuse_init(struct fuse_conn_info *conn)
 {
 	GThread * main_gthread;
 	g_thread_init(NULL);
+
+	if (options.dststr == NULL)
+		g_error("Target not specified");
+
 	main_gthread = g_thread_create(main_loop_func, NULL, TRUE, NULL);
 	conn->async_read = 0;
 	conn->want &= ~FUSE_CAP_ASYNC_READ;
@@ -269,6 +299,17 @@ static struct fuse_operations gobexfuse_oper = {
 
 int main(int argc, char *argv[])
 {
-	return fuse_main(argc, argv, &gobexfuse_oper, NULL);
+	int retfuse;
+	struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
+
+	memset(&options, 0, sizeof(struct options));
+
+	if (fuse_opt_parse(&args, &options, gobexfuse_opts, NULL) == -1)
+		return -1;
+
+	retfuse = fuse_main(args.argc, args.argv, &gobexfuse_oper, NULL);
+	
+	fuse_opt_free_args(&args);
+	return retfuse;
 }
 
