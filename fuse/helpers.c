@@ -619,7 +619,7 @@ static gboolean async_get_consumer(const void *buf, gsize len,
 	struct gobexhlp_data *session = user_data;
 	struct gobexhlp_buffer *buffer = session->buffer;
 
-	g_print("async_get_consumer():[%d]:\n", (int)len);
+	//g_print("async_get_consumer():[%d]:\n", (int)len);
 
 	memcpy(buffer->data + buffer->tmpsize, buf, len);
 	buffer->tmpsize += len;
@@ -682,10 +682,10 @@ struct gobexhlp_buffer *gobexhlp_get(struct gobexhlp_data* session,
 			break;
 		}
 	*/
-	return buffer;
+	return session->buffer;
 }
 
-static gssize async_put_consumer(void *buf, gsize len, gpointer user_data)
+static gssize async_put_producer(void *buf, gsize len, gpointer user_data)
 {
 	gssize size;
 	struct gobexhlp_data *session = user_data;
@@ -731,7 +731,7 @@ void gobexhlp_put(struct gobexhlp_data* session,
 
 	session->buffer = buffer;
 	gobexhlp_request_new(session, g_strdup_printf("put %s", path));
-	g_obex_put_req(session->obex, async_put_consumer,
+	g_obex_put_req(session->obex, async_put_producer,
 					complete_func, session, NULL,
 					G_OBEX_HDR_NAME, target,
 					G_OBEX_HDR_INVALID);
