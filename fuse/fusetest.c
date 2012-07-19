@@ -127,13 +127,6 @@ static int gobexfuse_readdir(const char *path, void *buf,
 	gchar *string;
 	GList *files;
 
-	// secure intense queries
-	//while (time(NULL) < session->last_ask + 15) {
-	//	;
-	//}
-	//if(strcmp(path, "/") != 0)
-	//	return -ENOENT;
-
 	filler(buf, ".", NULL, 0);
 	filler(buf, "..", NULL, 0);
 	
@@ -143,8 +136,6 @@ static int gobexfuse_readdir(const char *path, void *buf,
 		string = g_list_nth_data(files, i);
 		filler(buf, string, NULL, 0);
 	}
-
-	//session->last_ask = time(NULL);
 
 	return 0;
 }
@@ -221,10 +212,6 @@ static int gobexfuse_release(const char *path, struct fuse_file_info *fi)
 	
 	if (file_buffer->edited == TRUE) {
 		// send new file to device
-		g_print("<data>\n");
-		g_print("%s", (char*)(file_buffer->data));
-		g_print("\n</data>\n");
-		//gobexfuse_unlink(path);
 		gobexhlp_put(session, file_buffer, path);
 	}
 
