@@ -156,7 +156,7 @@ static int gobexfuse_open(const char *path, struct fuse_file_info *fi)
 	g_print("gobexfuse_open(%s)\n", path);
 
 	file_buffer = gobexhlp_get(session, path);
-	if (file_buffer == NULL || file_buffer->complete == FALSE)
+	if (file_buffer == NULL)
 		return -ENOENT;
 	
 	fi->fh = (uint64_t)file_buffer;
