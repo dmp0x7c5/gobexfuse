@@ -36,9 +36,6 @@ gcc  -I/usr/include/glib-2.0 -I/usr/lib64/glib-2.0/include -I../  ../gobex/gobex
 #include <bluetooth/sdp.h>
 #include <bluetooth/sdp_lib.h>
 
-// test sleep
-#include <unistd.h>
-
 // from client/bluetooth.c
 #define BT_RX_MTU 32767
 #define BT_TX_MTU 32767
@@ -84,8 +81,6 @@ struct gobexhlp_listfolder_req {
 };
 
 
-
-
 struct gobexhlp_data* gobexhlp_connect(const char *target);
 void gobexhlp_disconnect(struct gobexhlp_data* session);
 void gobexhlp_setpath(struct gobexhlp_data* session, const char *path);
@@ -94,46 +89,6 @@ struct stat *gobexhlp_getattr(struct gobexhlp_data* session,
 				const char *path);
 void gobexhlp_delete(struct gobexhlp_data* session, const char *path);
 
-
-void gobexhlp_request_new(struct gobexhlp_data *session,
-					gchar *name)
-{
-	g_mutex_lock(session->req_mutex);
-	if (session->request != NULL) {
-		g_print("Another request (%s) active!\n",
-				session->request->name);
-		// wait till the current request ends
-		while (session->request != NULL)
-			g_cond_wait(session->req_cond, session->req_mutex);
-	}
-	g_mutex_unlock(session->req_mutex);
-
-	session->request = g_malloc0(sizeof(*session->request));
-	session->request->name = name;
-	session->request->complete = FALSE;
-}
-
-
-void gobexhlp_request_wait_free(struct gobexhlp_data *session)
-{
-	guint start;
-	
-	g_print("WAIT for %s\n", session->request->name);
-	start = time(NULL);
-	g_mutex_lock(session->data_mutex);
-	while (session->request->complete != TRUE) {
-		 g_cond_wait(session->data_cond, session->data_mutex);
-	}
-	g_mutex_unlock(session->data_mutex);
-	
-	
-	g_mutex_lock(session->req_mutex);
-	g_free(session->request->name);
-	g_free(session->request);
-	session->request = NULL;
-	g_cond_signal(session->req_cond);
-	g_mutex_unlock(session->req_mutex);
-}
 
 static uint16_t get_ftp_channel(const char *dststr)
 {
@@ -271,7 +226,6 @@ struct gobexhlp_data* gobexhlp_connect(const char *target)
 					BT_IO_OPT_SEC_LEVEL, BT_IO_SEC_LOW,
 					BT_IO_OPT_INVALID);
 
-
 	session->file_stat = g_hash_table_new_full( g_str_hash, g_str_equal,
 					g_free, g_free);
 	session->listfolder_req = g_hash_table_new_full( g_str_hash,
@@ -303,6 +257,45 @@ void gobexhlp_disconnect(struct gobexhlp_data* session)
 	g_free(session);
 	session = NULL;
 }
+
+
+void gobexhlp_request_new(struct gobexhlp_data *session,
+					gchar *name)
+{
+	g_mutex_lock(session->req_mutex);
+	if (session->request != NULL) {
+		g_print("Another request (%s) active!\n",
+				session->request->name);
+		// wait till the current request ends
+		while (session->request != NULL)
+			g_cond_wait(session->req_cond, session->req_mutex);
+	}
+	g_mutex_unlock(session->req_mutex);
+
+	session->request = g_malloc0(sizeof(*session->request));
+	session->request->name = name;
+	session->request->complete = FALSE;
+}
+
+
+void gobexhlp_request_wait_free(struct gobexhlp_data *session)
+{
+	g_print("WAIT for %s\n", session->request->name);
+	g_mutex_lock(session->data_mutex);
+	while (session->request->complete != TRUE) {
+		 g_cond_wait(session->data_cond, session->data_mutex);
+	}
+	g_mutex_unlock(session->data_mutex);
+	
+	
+	g_mutex_lock(session->req_mutex);
+	g_free(session->request->name);
+	g_free(session->request);
+	session->request = NULL;
+	g_cond_signal(session->req_cond);
+	g_mutex_unlock(session->req_mutex);
+}
+
 
 static void response_func(GObex *obex, GError *err, GObexPacket *rsp,
 							gpointer user_data)
@@ -518,7 +511,7 @@ GList *gobexhlp_listfolder(struct gobexhlp_data* session, const char *path)
 {
 	GObexPacket *req;
 	struct gobexhlp_listfolder_req *lsreq;
-	guint reqpkt; //start;
+	guint reqpkt;
 
 	session->path = path;
 	gobexhlp_setpath( session, path);
@@ -527,24 +520,17 @@ GList *gobexhlp_listfolder(struct gobexhlp_data* session, const char *path)
 
 	lsreq = g_malloc0(sizeof(*lsreq));
 	lsreq->files = g_list_alloc();
+	g_hash_table_replace(session->listfolder_req, g_strdup(path), lsreq);
 	
 	gobexhlp_request_new(session, g_strdup_printf("listfolder %s", path));
-
-	g_hash_table_replace(session->listfolder_req, g_strdup(path), lsreq);
-
 	req = g_obex_packet_new(G_OBEX_OP_GET, TRUE, G_OBEX_HDR_INVALID);
 	g_obex_packet_add_bytes(req, G_OBEX_HDR_TYPE, OBEX_FTP_LS,
 						strlen(OBEX_FTP_LS) + 1);
-
 	reqpkt = g_obex_get_req_pkt(session->obex, req,
 				async_listfolder_consumer,
 				complete_func,
 				session, NULL);
-	/*
-	 * In case of "du -sh sth" it fails, waits till timeout, probably
-	 * due to intense queries function aync_listfolder_consumer doesn't
-	 * run. Maybe intense setpath causes this freeze?
-	 */
+
 	gobexhlp_request_wait_free(session);
 
 	return lsreq->files;
@@ -596,7 +582,7 @@ static gboolean async_get_consumer(const void *buf, gsize len,
 	struct gobexhlp_data *session = user_data;
 	struct gobexhlp_buffer *buffer = session->buffer;
 
-	g_print("async_get_consumer():[%d]:\n", (int)len);
+	//g_print("async_get_consumer():[%d]:\n", (int)len);
 
 	memcpy(buffer->data + buffer->tmpsize, buf, len);
 	buffer->tmpsize += len;
@@ -665,7 +651,7 @@ static gssize async_put_producer(void *buf, gsize len, gpointer user_data)
 		return 0;
 	}
 
-	g_print("async_put_consumer():[%d/%d]:\n", (int)len, (int)size);
+	//g_print("async_put_producer():[%d/%d]:\n", (int)len, (int)size);
 
 	memcpy(buf, buffer->data + buffer->tmpsize, size);
 	buffer->tmpsize += size;
@@ -678,8 +664,6 @@ void gobexhlp_put(struct gobexhlp_data* session,
 				const char *path)
 {
 	gchar *npath, *target;
-	//guint start;
-	//guint timeout = 60*5;
 
 	npath = path_get_element(path, PATH_GET_DIRS);
 	target = path_get_element(path, PATH_GET_FILE);
