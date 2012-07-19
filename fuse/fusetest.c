@@ -258,7 +258,7 @@ static int gobexfuse_rename(const char *from, const char *to)
 
 static int gobexfuse_unlink(const char *path)
 {
-	gobexhlp_delete(session, path, TRUE);
+	gobexhlp_delete(session, path);
 	return 0;
 }
 

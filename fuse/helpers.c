@@ -58,7 +58,6 @@ struct gobexhlp_buffer {
 	void *data;
 	gsize tmpsize;
 	gsize size;
-	gboolean complete;
 	gboolean edited;
 };
 
@@ -74,7 +73,6 @@ struct gobexhlp_data {
 	gchar *setpath;
 	struct gobexhlp_request *request;
 	struct gobexhlp_buffer *buffer;
-	// time_t last_ask;
 	GCond *data_cond;
 	GCond *req_cond;
 	GMutex *data_mutex;
@@ -83,7 +81,6 @@ struct gobexhlp_data {
 
 struct gobexhlp_listfolder_req {
 	GList *files;
-	//gboolean complete;
 };
 
 
@@ -95,8 +92,7 @@ void gobexhlp_setpath(struct gobexhlp_data* session, const char *path);
 GList *gobexhlp_listfolder(struct gobexhlp_data* session, const char *path);
 struct stat *gobexhlp_getattr(struct gobexhlp_data* session,
 				const char *path);
-void gobexhlp_delete(struct gobexhlp_data* session, const char *path,
-		gboolean delete_attr);
+void gobexhlp_delete(struct gobexhlp_data* session, const char *path);
 
 
 void gobexhlp_request_new(struct gobexhlp_data *session,
@@ -121,7 +117,6 @@ void gobexhlp_request_new(struct gobexhlp_data *session,
 void gobexhlp_request_wait_free(struct gobexhlp_data *session)
 {
 	guint start;
-	//guint timeout = 20;
 	
 	g_print("WAIT for %s\n", session->request->name);
 	start = time(NULL);
@@ -130,12 +125,8 @@ void gobexhlp_request_wait_free(struct gobexhlp_data *session)
 		 g_cond_wait(session->data_cond, session->data_mutex);
 	}
 	g_mutex_unlock(session->data_mutex);
-	/*	if (time(NULL) > start + timeout) {
-			g_print("\nTIMEOUT (%s)\n\n",
-					session->request->name);
-			break;
-		}
-	*/
+	
+	
 	g_mutex_lock(session->req_mutex);
 	g_free(session->request->name);
 	g_free(session->request);
@@ -288,8 +279,7 @@ struct gobexhlp_data* gobexhlp_connect(const char *target)
 
 	session->pathdepth = 0;
 	session->setpath = g_strdup("/");
-	// to prevent upcoming NULL check
-	// session->last_ask = time(NULL) - 15;
+	
 	session->data_cond = g_cond_new();
 	session->data_mutex = g_mutex_new(); 
 	session->req_cond = g_cond_new();
@@ -420,7 +410,6 @@ static gboolean async_listfolder_consumer(const void *buf, gsize len,
 {
 	GMarkupParseContext *ctxt;
 	struct gobexhlp_data *session = user_data;
-	//struct gobexhlp_listfolder_req *req;
 
 	g_print("listfolder_xml_element consumed: ");
 	ctxt = g_markup_parse_context_new(&parser, 0, session, NULL);
@@ -428,8 +417,6 @@ static gboolean async_listfolder_consumer(const void *buf, gsize len,
 	g_markup_parse_context_free(ctxt);
 	g_print("\n");
 
-	//req = g_hash_table_lookup(session->listfolder_req, session->path);
-	//req->complete = TRUE; // moved to complete_func
 	g_print("ASYNC_LISTFOLDER COMPLETED\n");
 
 	return TRUE;
@@ -532,7 +519,6 @@ GList *gobexhlp_listfolder(struct gobexhlp_data* session, const char *path)
 	GObexPacket *req;
 	struct gobexhlp_listfolder_req *lsreq;
 	guint reqpkt; //start;
-	//guint timeout = 5;
 
 	session->path = path;
 	gobexhlp_setpath( session, path);
@@ -541,7 +527,6 @@ GList *gobexhlp_listfolder(struct gobexhlp_data* session, const char *path)
 
 	lsreq = g_malloc0(sizeof(*lsreq));
 	lsreq->files = g_list_alloc();
-	//lsreq->complete = false;
 	
 	gobexhlp_request_new(session, g_strdup_printf("listfolder %s", path));
 
@@ -560,14 +545,6 @@ GList *gobexhlp_listfolder(struct gobexhlp_data* session, const char *path)
 	 * due to intense queries function aync_listfolder_consumer doesn't
 	 * run. Maybe intense setpath causes this freeze?
 	 */
-	/*g_print("(while lsreq->complete)\n");
-	start = time(NULL);
-	while (lsreq->complete != TRUE)
-		if (time(NULL) > start + timeout) {
-			g_print("\nTimeout\n\n");
-			break;
-		}
-	*/
 	gobexhlp_request_wait_free(session);
 
 	return lsreq->files;
@@ -619,14 +596,13 @@ static gboolean async_get_consumer(const void *buf, gsize len,
 	struct gobexhlp_data *session = user_data;
 	struct gobexhlp_buffer *buffer = session->buffer;
 
-	//g_print("async_get_consumer():[%d]:\n", (int)len);
+	g_print("async_get_consumer():[%d]:\n", (int)len);
 
 	memcpy(buffer->data + buffer->tmpsize, buf, len);
 	buffer->tmpsize += len;
 
 	if (buffer->tmpsize == buffer->size) {
 		g_print(">>> file transfered\n");
-		//buffer->complete = TRUE; // moved to complete_func
 	}
 
 	return TRUE;
@@ -637,9 +613,7 @@ struct gobexhlp_buffer *gobexhlp_get(struct gobexhlp_data* session,
 {
 	gchar *npath, *target;
 	struct gobexhlp_buffer *buffer;
-	//guint start;
 	struct stat *stfile;
-	//guint timeout = 60*5;
 
 	g_print("gobexhlp_get(%s)\n", path);
 
@@ -651,11 +625,9 @@ struct gobexhlp_buffer *gobexhlp_get(struct gobexhlp_data* session,
 	buffer->data = g_malloc0(sizeof(char) * stfile->st_size);
 	buffer->size = stfile->st_size;
 	buffer->tmpsize = 0;
-	buffer->complete = FALSE;
 	buffer->edited = FALSE;
 
 	if (buffer->size == 0) {
-		buffer->complete = TRUE;
 		return buffer;
 	}
 
@@ -669,20 +641,12 @@ struct gobexhlp_buffer *gobexhlp_get(struct gobexhlp_data* session,
 					complete_func, session, NULL,
 					G_OBEX_HDR_NAME, target,
 					G_OBEX_HDR_INVALID);
-	gobexhlp_request_wait_free(session);
-
 	g_free(npath);
 	g_free(target);
 
-	/*g_print("(while buffer->complete)\n");
-	start = time(NULL);
-	while (buffer->complete != TRUE)
-		if (time(NULL) > start + timeout) {
-			g_print("\nTimeout\n\n");
-			break;
-		}
-	*/
-	return session->buffer;
+	gobexhlp_request_wait_free(session);
+	
+	return buffer;
 }
 
 static gssize async_put_producer(void *buf, gsize len, gpointer user_data)
@@ -698,7 +662,6 @@ static gssize async_put_producer(void *buf, gsize len, gpointer user_data)
 
 	if (size == 0) {
 		g_print(">>> file transfered\n");
-		//buffer->complete = TRUE; // moved to complete_func
 		return 0;
 	}
 
@@ -724,10 +687,9 @@ void gobexhlp_put(struct gobexhlp_data* session,
 
 	g_print("gobexhlp_put(%s:%s)\n", npath, target);
 
-	gobexhlp_delete(session, path, FALSE); // clear for the new version
+	gobexhlp_delete(session, path);
 
 	buffer->tmpsize = 0;
-	buffer->complete = FALSE;
 
 	session->buffer = buffer;
 	gobexhlp_request_new(session, g_strdup_printf("put %s", path));
@@ -735,7 +697,6 @@ void gobexhlp_put(struct gobexhlp_data* session,
 					complete_func, session, NULL,
 					G_OBEX_HDR_NAME, target,
 					G_OBEX_HDR_INVALID);
-
 	g_free(npath);
 	g_free(target);
 
@@ -793,8 +754,7 @@ void gobexhlp_move(struct gobexhlp_data* session, const char *oldpath,
  * Write operation should check whether file is empty, if it is, it means
  * that it could be a copy operation - file could be removed and then send
  */
-void gobexhlp_delete(struct gobexhlp_data* session, const char *path,
-		gboolean delete_attr)
+void gobexhlp_delete(struct gobexhlp_data* session, const char *path)
 {
 	gchar *npath, *target;
 
@@ -808,8 +768,7 @@ void gobexhlp_delete(struct gobexhlp_data* session, const char *path,
 	gobexhlp_request_new(session, g_strdup_printf("delete %s", path));
 	g_obex_delete(session->obex, target, response_func, session, NULL);
 
-	if (delete_attr == TRUE)
-		g_hash_table_remove(session->file_stat, path);
+	g_hash_table_remove(session->file_stat, path);
 	g_free(npath);
 	g_free(target);
 
