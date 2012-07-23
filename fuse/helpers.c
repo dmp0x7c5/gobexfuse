@@ -254,6 +254,11 @@ void gobexhlp_disconnect(struct gobexhlp_data* session)
 	g_hash_table_remove_all(session->listfolder_req);
 	g_free(session->setpath);
 
+	g_mutex_free(session->data_mutex);
+	g_cond_free(session->data_cond);
+	g_mutex_free(session->req_mutex);
+	g_cond_free(session->req_cond);
+
 	g_free(session);
 	session = NULL;
 }
@@ -264,6 +269,10 @@ void gobexhlp_request_new(struct gobexhlp_data *session,
 {
 	g_mutex_lock(session->req_mutex);
 	if (session->request != NULL) {
+		/*
+		 * This check in unnecessary in fuse 
+		 * single threaded mode (-s option)
+		 */
 		g_print("Another request (%s) active!\n",
 				session->request->name);
 		// wait till the current request ends
@@ -275,6 +284,8 @@ void gobexhlp_request_new(struct gobexhlp_data *session,
 	session->request = g_malloc0(sizeof(*session->request));
 	session->request->name = name;
 	session->request->complete = FALSE;
+	
+	g_print("REQUEST NEW %s\n", session->request->name);
 }
 
 
@@ -582,7 +593,7 @@ static gboolean async_get_consumer(const void *buf, gsize len,
 	struct gobexhlp_data *session = user_data;
 	struct gobexhlp_buffer *buffer = session->buffer;
 
-	//g_print("async_get_consumer():[%d]:\n", (int)len);
+	g_print("async_get_consumer():[%d]:\n", (int)len);
 
 	memcpy(buffer->data + buffer->tmpsize, buf, len);
 	buffer->tmpsize += len;
@@ -651,7 +662,7 @@ static gssize async_put_producer(void *buf, gsize len, gpointer user_data)
 		return 0;
 	}
 
-	//g_print("async_put_producer():[%d/%d]:\n", (int)len, (int)size);
+	g_print("async_put_producer():[%d/%d]:\n", (int)len, (int)size);
 
 	memcpy(buf, buffer->data + buffer->tmpsize, size);
 	buffer->tmpsize += size;
