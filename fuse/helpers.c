@@ -28,6 +28,7 @@ gcc  -I/usr/include/glib-2.0 -I/usr/lib64/glib-2.0/include -I../  ../gobex/gobex
 #include <btio/btio.h>
 
 #include <glib.h>
+#include <glib/gthread.h>
 #include <fcntl.h>
 
 // includes for get_ftp_channel()
@@ -45,6 +46,9 @@ gcc  -I/usr/include/glib-2.0 -I/usr/lib64/glib-2.0/include -I../  ../gobex/gobex
 #define OBEX_FTP_UUID_LEN 16
 
 #define OBEX_FTP_LS "x-obex/folder-listing"
+
+static GCond *gobex_cond = NULL;
+static GMutex *gobex_mutex = NULL;
 
 struct gobexhlp_request {
 	gchar *name;
@@ -70,10 +74,10 @@ struct gobexhlp_data {
 	gchar *setpath;
 	struct gobexhlp_request *request;
 	struct gobexhlp_buffer *buffer;
-	GCond *data_cond;
-	GCond *req_cond;
-	GMutex *data_mutex;
-	GMutex *req_mutex;
+	//GCond *data_cond;
+	//GCond *req_cond;
+	//GMutex *data_mutex;
+	//GMutex *req_mutex;
 };
 
 struct gobexhlp_listfolder_req {
@@ -161,6 +165,36 @@ static uint16_t get_ftp_channel(const char *dststr)
 }
 
 
+// taken from client/bluetooth.c - bluetooth_getpacketopt
+static int get_packet_opt(GIOChannel *io, int *tx_mtu, int *rx_mtu)
+{
+	int sk = g_io_channel_unix_get_fd(io);
+	int type;
+	int omtu = -1;
+	int imtu = -1;
+	socklen_t len = sizeof(int);
+
+	if (getsockopt(sk, SOL_SOCKET, SO_TYPE, &type, &len) < 0)
+		return -errno;
+
+	if (type != SOCK_SEQPACKET)
+		return -EINVAL;
+
+	if (!bt_io_get(io, BT_IO_L2CAP, NULL, BT_IO_OPT_OMTU, &omtu,
+						BT_IO_OPT_IMTU, &imtu,
+						BT_IO_OPT_INVALID))
+		return -EINVAL;
+
+	if (tx_mtu)
+		*tx_mtu = omtu;
+
+	if (rx_mtu)
+		*rx_mtu = imtu;
+
+	return 0;
+}
+
+
 static void obex_callback(GObex *obex, GError *err, GObexPacket *rsp,
 							gpointer user_data)
 {
@@ -175,6 +209,9 @@ static void bt_io_callback(GIOChannel *io, GError *err, gpointer user_data)
 {
 	GObex *obex;
 	struct gobexhlp_data *session = user_data;
+	GObexTransportType type;
+	int tx_mtu = -1;
+	int rx_mtu = -1;
 
 	if (err != NULL) {
 		g_printerr("%s\n", err->message);
@@ -186,7 +223,17 @@ static void bt_io_callback(GIOChannel *io, GError *err, gpointer user_data)
 	g_io_channel_set_flags(session->io, G_IO_FLAG_NONBLOCK, NULL);
 	g_io_channel_set_close_on_unref(session->io, TRUE);
 
-	obex = g_obex_new(io, G_OBEX_TRANSPORT_STREAM, BT_TX_MTU, BT_RX_MTU);
+	if ( get_packet_opt(session->io, &tx_mtu, &rx_mtu) == 0) {
+		type = G_OBEX_TRANSPORT_PACKET;
+		g_print("PACKET transport ");
+	}
+	else {
+		type = G_OBEX_TRANSPORT_STREAM;
+		g_print("STREAM transport ");
+	}
+
+	g_print("tx:%d rx:%d\n", tx_mtu, rx_mtu);
+	obex = g_obex_new(io, type, tx_mtu, rx_mtu);
 	session->obex = g_obex_ref(obex);
 
 	g_obex_connect(session->obex, obex_callback, session, NULL,
@@ -234,10 +281,13 @@ struct gobexhlp_data* gobexhlp_connect(const char *target)
 	session->pathdepth = 0;
 	session->setpath = g_strdup("/");
 	
-	session->data_cond = g_cond_new();
-	session->data_mutex = g_mutex_new(); 
-	session->req_cond = g_cond_new();
-	session->req_mutex = g_mutex_new(); 
+	//session->data_cond = g_cond_new();
+	//session->data_mutex = g_mutex_new(); 
+	//session->req_cond = g_cond_new();
+	//session->req_mutex = g_mutex_new(); 
+	
+	gobex_mutex = g_mutex_new();
+	gobex_cond = g_cond_new();
 
 	return session;
 }
@@ -254,10 +304,10 @@ void gobexhlp_disconnect(struct gobexhlp_data* session)
 	g_hash_table_remove_all(session->listfolder_req);
 	g_free(session->setpath);
 
-	g_mutex_free(session->data_mutex);
-	g_cond_free(session->data_cond);
-	g_mutex_free(session->req_mutex);
-	g_cond_free(session->req_cond);
+	//g_mutex_free(session->data_mutex);
+	//g_cond_free(session->data_cond);
+	//g_mutex_free(session->req_mutex);
+	//g_cond_free(session->req_cond);
 
 	g_free(session);
 	session = NULL;
@@ -267,19 +317,19 @@ void gobexhlp_disconnect(struct gobexhlp_data* session)
 void gobexhlp_request_new(struct gobexhlp_data *session,
 					gchar *name)
 {
-	g_mutex_lock(session->req_mutex);
+	//g_mutex_lock(session->req_mutex);
 	if (session->request != NULL) {
 		/*
 		 * This check in unnecessary in fuse 
 		 * single threaded mode (-s option)
 		 */
-		g_print("Another request (%s) active!\n",
+		g_error("Another request (%s) active!\n",
 				session->request->name);
 		// wait till the current request ends
-		while (session->request != NULL)
-			g_cond_wait(session->req_cond, session->req_mutex);
+	//	while (session->request != NULL)
+	//		g_cond_wait(session->req_cond, session->req_mutex);
 	}
-	g_mutex_unlock(session->req_mutex);
+	//g_mutex_unlock(session->req_mutex);
 
 	session->request = g_malloc0(sizeof(*session->request));
 	session->request->name = name;
@@ -291,20 +341,21 @@ void gobexhlp_request_new(struct gobexhlp_data *session,
 
 void gobexhlp_request_wait_free(struct gobexhlp_data *session)
 {
+	g_mutex_lock(gobex_mutex);
 	g_print("WAIT for %s\n", session->request->name);
-	g_mutex_lock(session->data_mutex);
 	while (session->request->complete != TRUE) {
-		 g_cond_wait(session->data_cond, session->data_mutex);
+		 g_cond_wait(gobex_cond, gobex_mutex);
 	}
-	g_mutex_unlock(session->data_mutex);
+	g_print("COMPLETE %s\n", session->request->name);
+	g_mutex_unlock(gobex_mutex);
 	
 	
-	g_mutex_lock(session->req_mutex);
+	//g_mutex_lock(session->req_mutex);
 	g_free(session->request->name);
 	g_free(session->request);
 	session->request = NULL;
-	g_cond_signal(session->req_cond);
-	g_mutex_unlock(session->req_mutex);
+	//g_cond_signal(session->req_cond);
+	//g_mutex_unlock(session->req_mutex);
 }
 
 
@@ -312,18 +363,18 @@ static void response_func(GObex *obex, GError *err, GObexPacket *rsp,
 							gpointer user_data)
 {
 	struct gobexhlp_data *session = user_data;
-	g_mutex_lock(session->data_mutex);
+	g_mutex_lock(gobex_mutex);
 	
 	if (err != NULL) {
 		g_error("response_func: %s\n", err->message);
 	}
 	else {
-		g_print("RESPONSED %s\n", session->request->name);
+		g_print("RESPONSE %s\n", session->request->name);
 		session->request->complete = TRUE;
-		g_cond_signal(session->data_cond);
+		g_cond_signal(gobex_cond);
 	}
 
-	g_mutex_unlock(session->data_mutex);
+	g_mutex_unlock(gobex_mutex);
 }
 
 
@@ -331,7 +382,7 @@ static void complete_func(GObex *obex, GError *err,
 				gpointer user_data)
 {
 	struct gobexhlp_data *session = user_data;
-	g_mutex_lock(session->data_mutex);
+	g_mutex_lock(gobex_mutex);
 
 	if (err != NULL) {
 		g_error("complete_func: %s\n", err->message);
@@ -339,10 +390,10 @@ static void complete_func(GObex *obex, GError *err,
 	else {
 		g_print("COMPLETE %s\n", session->request->name);
 		session->request->complete = TRUE;
-		g_cond_signal(session->data_cond);
+		g_cond_signal(gobex_cond);
 	}
 
-	g_mutex_unlock(session->data_mutex);
+	g_mutex_unlock(gobex_mutex);
 }
 
 
@@ -398,7 +449,6 @@ static void listfolder_xml_element(GMarkupParseContext *ctxt,
 	else
 		pathname = g_strdup_printf("%s/%s", session->path, name);
 
-	g_print("%s ", pathname);
 	g_free(name);
 
 	g_hash_table_replace(session->file_stat, pathname, stbuf);
@@ -415,11 +465,9 @@ static gboolean async_listfolder_consumer(const void *buf, gsize len,
 	GMarkupParseContext *ctxt;
 	struct gobexhlp_data *session = user_data;
 
-	g_print("listfolder_xml_element consumed: ");
 	ctxt = g_markup_parse_context_new(&parser, 0, session, NULL);
 	g_markup_parse_context_parse(ctxt, buf, len, NULL);
 	g_markup_parse_context_free(ctxt);
-	g_print("\n");
 
 	g_print("ASYNC_LISTFOLDER COMPLETED\n");
 
@@ -485,7 +533,7 @@ void gobexhlp_setpath(struct gobexhlp_data* session, const char *path)
 	g_free(withslash2);
 
 	if (path[0] == '/' && session->pathdepth > 0) {
-		g_print("[/]:setroot /\n");
+		//g_print("[/]:setroot /\n");
 		gobexhlp_request_new(session,
 				g_strdup_printf("setpath root"));
 		g_obex_setpath(session->obex, NULL, response_func,
@@ -501,7 +549,7 @@ void gobexhlp_setpath(struct gobexhlp_data* session, const char *path)
 	len = g_strv_length(directories);
 	for (i = 0; i < len; i++) {
 		if (directories[i][0] != '\0') { // to protect multi slashes
-			g_print("[%d]:setpath %s\n", i, directories[i]);
+			//g_print("[%d]:setpath %s\n", i, directories[i]);
 			gobexhlp_request_new(session,
 					g_strdup_printf("setpath %s",
 						directories[i]));
@@ -599,7 +647,7 @@ static gboolean async_get_consumer(const void *buf, gsize len,
 	buffer->tmpsize += len;
 
 	if (buffer->tmpsize == buffer->size) {
-		g_print(">>> file transfered\n");
+		g_print(">>> get: file transfered\n");
 	}
 
 	return TRUE;
@@ -658,7 +706,7 @@ static gssize async_put_producer(void *buf, gsize len, gpointer user_data)
 	}
 
 	if (size == 0) {
-		g_print(">>> file transfered\n");
+		g_print(">>> put: file transfered\n");
 		return 0;
 	}
 
@@ -678,11 +726,12 @@ void gobexhlp_put(struct gobexhlp_data* session,
 
 	npath = path_get_element(path, PATH_GET_DIRS);
 	target = path_get_element(path, PATH_GET_FILE);
+	g_print("gobexhlp_put(%s,%s)\n", npath, target);
+	
 	gobexhlp_setpath(session, npath);
-
-	g_print("gobexhlp_put(%s:%s)\n", npath, target);
-
+	gobexhlp_listfolder(session, npath);
 	gobexhlp_delete(session, path);
+	gobexhlp_listfolder(session, npath);
 
 	buffer->tmpsize = 0;
 
@@ -705,7 +754,7 @@ void gobexhlp_touch(struct gobexhlp_data* session, const char *path)
 
 	buffer = g_malloc0(sizeof(*buffer));
 	buffer->size = 0;
-	gobexhlp_put(session, buffer, path);
+	//gobexhlp_put(session, buffer, path);
 
 	stbuf = g_malloc0(sizeof(struct stat));
 	stbuf->st_mode = S_IFREG;
@@ -716,8 +765,8 @@ void gobexhlp_touch(struct gobexhlp_data* session, const char *path)
 
 
 /*
- * Currently after rename, HTC doesn't send any response.
- * SE does nothing
+ * After rename or copy, HTC doesn't send any response,
+ * SE does nothing.
  */
 void gobexhlp_move(struct gobexhlp_data* session, const char *oldpath,
 		const char* newpath)
@@ -744,11 +793,7 @@ void gobexhlp_move(struct gobexhlp_data* session, const char *oldpath,
 	gobexhlp_request_wait_free(session);
 }
 
-/*
- * Side Note:
- * Write operation should check whether file is empty, if it is, it means
- * that it could be a copy operation - file could be removed and then send
- */
+
 void gobexhlp_delete(struct gobexhlp_data* session, const char *path)
 {
 	gchar *npath, *target;
