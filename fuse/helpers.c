@@ -290,6 +290,9 @@ void gobexhlp_disconnect(struct gobexhlp_data* session)
 {
 	g_print("gobexhlp_disconnect()\n");
 
+	if (session == NULL)
+		return;
+
 	g_io_channel_shutdown(session->io, TRUE, NULL);
 	g_io_channel_unref(session->io);
 	g_obex_unref(session->obex);
@@ -303,6 +306,9 @@ void gobexhlp_disconnect(struct gobexhlp_data* session)
 	//g_mutex_free(session->req_mutex);
 	//g_cond_free(session->req_cond);
 
+	g_mutex_free(gobexhlp_mutex);
+	g_cond_free(gobexhlp_cond);
+	
 	g_free(session);
 	session = NULL;
 }
@@ -335,12 +341,13 @@ void gobexhlp_request_new(struct gobexhlp_data *session,
 
 void gobexhlp_request_wait_free(struct gobexhlp_data *session)
 {
-	g_mutex_lock(gobexhlp_mutex);
+	//g_mutex_lock(gobexhlp_mutex);
 	g_print("WAIT for %s\n", session->request->name);
 	while (session->request->complete != TRUE) {
-		 g_cond_wait(gobexhlp_cond, gobexhlp_mutex);
+		g_print(".");
+		g_cond_wait(gobexhlp_cond, gobexhlp_mutex);
 	}
-	g_mutex_unlock(gobexhlp_mutex);
+	//g_mutex_unlock(gobexhlp_mutex);
 	
 	
 	//g_mutex_lock(session->req_mutex);
@@ -451,7 +458,7 @@ static gboolean async_listfolder_consumer(const void *buf, gsize len,
 	g_markup_parse_context_parse(ctxt, buf, len, NULL);
 	g_markup_parse_context_free(ctxt);
 
-	g_print("ASYNC_LISTFOLDER COMPLETED\n");
+	g_print("ASYNC_LISTFOLDER COMPLETED (%d)\n", (int)len);
 
 	return TRUE;
 }
@@ -623,7 +630,9 @@ static gboolean async_get_consumer(const void *buf, gsize len,
 	struct gobexhlp_data *session = user_data;
 	struct gobexhlp_buffer *buffer = session->buffer;
 
-	g_print("async_get_consumer():[%d]:\n", (int)len);
+	if ( buffer->tmpsize <= 10000) 
+		g_print("async_get_consumer():[%d.%d.%d]:\n", (int)len,
+				(int)buffer->tmpsize, (int)buffer->size);
 
 	memcpy(buffer->data + buffer->tmpsize, buf, len);
 	buffer->tmpsize += len;
@@ -668,10 +677,12 @@ struct gobexhlp_buffer *gobexhlp_get(struct gobexhlp_data* session,
 					complete_func, session, NULL,
 					G_OBEX_HDR_NAME, target,
 					G_OBEX_HDR_INVALID);
-	g_free(npath);
-	g_free(target);
 
 	gobexhlp_request_wait_free(session);
+	//gobexhlp_listfolder(session, "/"); /* empty action */
+	
+	g_free(npath);
+	g_free(target);
 	
 	return buffer;
 }
@@ -682,17 +693,23 @@ static gssize async_put_producer(void *buf, gsize len, gpointer user_data)
 	struct gobexhlp_data *session = user_data;
 	struct gobexhlp_buffer *buffer = session->buffer;
 
+
 	size = buffer->size - buffer->tmpsize;
 	if (size > len) {
 		size = len;
 	}
+
+	if (buffer->size - buffer->tmpsize <= 40000 ||
+			buffer->tmpsize <= 30000 )
+		g_print("async_put_producer():[%d.%d.%d.%d]:\n", (int)len,
+				(int)buffer->tmpsize, (int)buffer->size,
+				(int)size);
 
 	if (size == 0) {
 		g_print(">>> put: file transfered\n");
 		return 0;
 	}
 
-	g_print("async_put_producer():[%d/%d]:\n", (int)len, (int)size);
 
 	memcpy(buf, buffer->data + buffer->tmpsize, size);
 	buffer->tmpsize += size;
@@ -705,15 +722,15 @@ void gobexhlp_put(struct gobexhlp_data* session,
 				const char *path)
 {
 	gchar *npath, *target;
+	struct stat *stbuf;
 
 	npath = path_get_element(path, PATH_GET_DIRS);
 	target = path_get_element(path, PATH_GET_FILE);
-	g_print("gobexhlp_put(%s,%s)\n", npath, target);
+	g_print("gobexhlp_put(%s%s)\n", npath, target);
 	
-	gobexhlp_setpath(session, npath);
-	gobexhlp_listfolder(session, npath);
-	gobexhlp_delete(session, path);
-	gobexhlp_listfolder(session, npath);
+	stbuf = gobexhlp_getattr(session, path);
+	if (stbuf->st_size > 0)
+		gobexhlp_delete(session, path);
 
 	buffer->tmpsize = 0;
 
@@ -736,7 +753,7 @@ void gobexhlp_touch(struct gobexhlp_data* session, const char *path)
 
 	buffer = g_malloc0(sizeof(*buffer));
 	buffer->size = 0;
-	//gobexhlp_put(session, buffer, path);
+	//gobexhlp_put(session, buffer, path); /* virtual touch */
 
 	stbuf = g_malloc0(sizeof(struct stat));
 	stbuf->st_mode = S_IFREG;
