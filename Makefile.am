@@ -132,12 +132,12 @@ client_obex_client_LDADD = @GLIB_LIBS@ @DBUS_LIBS@ @BLUEZ_LIBS@
 endif
 
 if FUSE
-noinst_PROGRAMS += fuse/fusetest
+noinst_PROGRAMS += fuse/gobexfuse
 
-fuse_fusetest_SOURCES = $(gobex_sources) $(btio_sources) \
-		fuse/fusetest.c
+fuse_gobexfuse_SOURCES = $(gobex_sources) $(btio_sources) \
+		fuse/gobexfuse.c
 
-fuse_fusetest_LDADD = @GLIB_LIBS@ @GTHREAD_LIBS@ @BLUEZ_LIBS@ @FUSE_LIBS@ 
+fuse_gobexfuse_LDADD = @GLIB_LIBS@ @GTHREAD_LIBS@ @BLUEZ_LIBS@ @FUSE_LIBS@ 
 endif
 
 service_DATA = $(service_in_files:.service.in=.service)
