@@ -28,7 +28,6 @@ gcc  -I/usr/include/glib-2.0 -I/usr/lib64/glib-2.0/include -I../  ../gobex/gobex
 #include <btio/btio.h>
 
 #include <glib.h>
-#include <glib/gthread.h>
 #include <fcntl.h>
 
 // includes for get_ftp_channel()
@@ -43,8 +42,8 @@ gcc  -I/usr/include/glib-2.0 -I/usr/lib64/glib-2.0/include -I../  ../gobex/gobex
 
 #define OBEX_FTP_LS "x-obex/folder-listing"
 
-static GCond *gobex_cond = NULL;
-static GMutex *gobex_mutex = NULL;
+static GCond *gobexhlp_cond = NULL;
+static GMutex *gobexhlp_mutex = NULL;
 
 struct gobexhlp_request {
 	gchar *name;
@@ -221,14 +220,13 @@ static void bt_io_callback(GIOChannel *io, GError *err, gpointer user_data)
 
 	if ( get_packet_opt(session->io, &tx_mtu, &rx_mtu) == 0) {
 		type = G_OBEX_TRANSPORT_PACKET;
-		g_print("PACKET transport ");
+		g_print("PACKET transport tx:%d rx:%d\n", tx_mtu, rx_mtu);
 	}
 	else {
 		type = G_OBEX_TRANSPORT_STREAM;
-		g_print("STREAM transport ");
+		g_print("STREAM transport\n");
 	}
 
-	g_print("tx:%d rx:%d\n", tx_mtu, rx_mtu);
 	obex = g_obex_new(io, type, tx_mtu, rx_mtu);
 	session->obex = g_obex_ref(obex);
 
@@ -282,8 +280,8 @@ struct gobexhlp_data* gobexhlp_connect(const char *target)
 	//session->req_cond = g_cond_new();
 	//session->req_mutex = g_mutex_new(); 
 	
-	gobex_mutex = g_mutex_new();
-	gobex_cond = g_cond_new();
+	gobexhlp_mutex = g_mutex_new();
+	gobexhlp_cond = g_cond_new();
 
 	return session;
 }
@@ -337,13 +335,12 @@ void gobexhlp_request_new(struct gobexhlp_data *session,
 
 void gobexhlp_request_wait_free(struct gobexhlp_data *session)
 {
-	g_mutex_lock(gobex_mutex);
+	g_mutex_lock(gobexhlp_mutex);
 	g_print("WAIT for %s\n", session->request->name);
 	while (session->request->complete != TRUE) {
-		 g_cond_wait(gobex_cond, gobex_mutex);
+		 g_cond_wait(gobexhlp_cond, gobexhlp_mutex);
 	}
-	g_print("COMPLETE %s\n", session->request->name);
-	g_mutex_unlock(gobex_mutex);
+	g_mutex_unlock(gobexhlp_mutex);
 	
 	
 	//g_mutex_lock(session->req_mutex);
@@ -355,41 +352,30 @@ void gobexhlp_request_wait_free(struct gobexhlp_data *session)
 }
 
 
-static void response_func(GObex *obex, GError *err, GObexPacket *rsp,
-							gpointer user_data)
-{
-	struct gobexhlp_data *session = user_data;
-	g_mutex_lock(gobex_mutex);
-	
-	if (err != NULL) {
-		g_error("response_func: %s\n", err->message);
-	}
-	else {
-		g_print("RESPONSE %s\n", session->request->name);
-		session->request->complete = TRUE;
-		g_cond_signal(gobex_cond);
-	}
-
-	g_mutex_unlock(gobex_mutex);
-}
-
-
 static void complete_func(GObex *obex, GError *err,
 				gpointer user_data)
 {
 	struct gobexhlp_data *session = user_data;
-	g_mutex_lock(gobex_mutex);
+	g_mutex_lock(gobexhlp_mutex);
 
 	if (err != NULL) {
-		g_error("complete_func: %s\n", err->message);
+		g_error("ERROR: %s\n", err->message);
 	}
 	else {
 		g_print("COMPLETE %s\n", session->request->name);
 		session->request->complete = TRUE;
-		g_cond_signal(gobex_cond);
+		g_cond_signal(gobexhlp_cond);
 	}
 
-	g_mutex_unlock(gobex_mutex);
+	g_mutex_unlock(gobexhlp_mutex);
+}
+
+
+static void response_func(GObex *obex, GError *err, GObexPacket *rsp,
+							gpointer user_data)
+{
+	complete_func(obex, err, user_data);
+
 }
 
 
