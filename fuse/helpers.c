@@ -37,10 +37,6 @@ gcc  -I/usr/include/glib-2.0 -I/usr/lib64/glib-2.0/include -I../  ../gobex/gobex
 #include <bluetooth/sdp.h>
 #include <bluetooth/sdp_lib.h>
 
-// from client/bluetooth.c
-#define BT_RX_MTU 32767
-#define BT_TX_MTU 32767
-
 #define OBEX_FTP_UUID \
 	"\xF9\xEC\x7B\xC4\x95\x3C\x11\xD2\x98\x4E\x52\x54\x00\xDC\x9E\x09"
 #define OBEX_FTP_UUID_LEN 16
