@@ -42,8 +42,8 @@ gcc  -I/usr/include/glib-2.0 -I/usr/lib64/glib-2.0/include -I../  ../gobex/gobex
 
 #define OBEX_FTP_LS "x-obex/folder-listing"
 
-static GCond *gobexhlp_cond = NULL;
-static GMutex *gobexhlp_mutex = NULL;
+static GCond *gobexhlp_cond;
+static GMutex *gobexhlp_mutex;
 
 struct gobexhlp_request {
 	gchar *name;
@@ -89,10 +89,10 @@ struct stat *gobexhlp_getattr(struct gobexhlp_data* session,
 void gobexhlp_delete(struct gobexhlp_data* session, const char *path);
 
 
-static int find_rfcomm_uuid(void *user_data)
+static uint16_t find_rfcomm_uuid(void *user_data)
 {
 	sdp_list_t *pds = (sdp_list_t*) user_data;
-	int channel = 0;
+	uint16_t channel = 0;
 
 	for (;pds;pds = pds->next) {
 		sdp_data_t *d = (sdp_data_t*)pds->data;
