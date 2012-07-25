@@ -118,15 +118,17 @@ static int gobexfuse_getattr(const char *path, struct stat *stbuf)
 	if (strcmp(path, "/") == 0) {
 		stbuf->st_mode = S_IFDIR | 0755;
 		stbuf->st_nlink = 2;
-	}
-	else {
+	} else {
 		stfile = gobexhlp_getattr(session, path);
+		
 		if (stfile == NULL)
 			return -ENOENT; 
+		
 		if (stfile->st_mode == S_IFREG)
 			stbuf->st_mode = stfile->st_mode | 0666;
-		else // S_IFDIR
+		else /* S_IFDIR */
 			stbuf->st_mode = stfile->st_mode | 0755;
+
 		stbuf->st_nlink = 1;
 		stbuf->st_size = stfile->st_size;
 		stbuf->st_mtime = stbuf->st_atime = stbuf->st_ctime =
@@ -162,6 +164,7 @@ static int gobexfuse_readdir(const char *path, void *buf,
 	
 	files = gobexhlp_listfolder(session, path);
 	len = g_list_length(files);
+
 	for (i = 1; i < len; i++) { // element for i==0 is NULL
 		string = g_list_nth_data(files, i);
 		filler(buf, string, NULL, 0);
@@ -177,6 +180,7 @@ static int gobexfuse_open(const char *path, struct fuse_file_info *fi)
 	g_print("gobexfuse_open(%s)\n", path);
 
 	file_buffer = gobexhlp_get(session, path);
+
 	if (file_buffer == NULL)
 		return -ENOENT;
 	
@@ -193,6 +197,7 @@ static int gobexfuse_read(const char *path, char *buf, size_t size,
 	struct gobexhlp_buffer *file_buffer = (struct gobexhlp_buffer*)fi->fh;
 
 	asize = file_buffer->size - offset;
+
 	if (asize > size) {
 		asize = size;
 	}
@@ -214,8 +219,7 @@ static int gobexfuse_write(const char *path, const char *buf, size_t size,
 		nsize = offset + size;
 		file_buffer->data = g_realloc(file_buffer->data, nsize);
 		file_buffer->size = nsize;
-	}
-	else {
+	} else {
 		nsize = file_buffer->size;
 	}
 	file_buffer->edited = TRUE;

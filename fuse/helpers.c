@@ -30,7 +30,7 @@ gcc  -I/usr/include/glib-2.0 -I/usr/lib64/glib-2.0/include -I../  ../gobex/gobex
 #include <glib.h>
 #include <fcntl.h>
 
-// includes for get_ftp_channel()
+/* includes for get_ftp_channel() */
 #include <bluetooth/bluetooth.h>
 #include <bluetooth/rfcomm.h>
 #include <bluetooth/sdp.h>
@@ -89,6 +89,31 @@ struct stat *gobexhlp_getattr(struct gobexhlp_data* session,
 void gobexhlp_delete(struct gobexhlp_data* session, const char *path);
 
 
+static int find_rfcomm_uuid(void *user_data)
+{
+	sdp_list_t *pds = (sdp_list_t*) user_data;
+	int channel = 0;
+
+	for (;pds;pds = pds->next) {
+		sdp_data_t *d = (sdp_data_t*)pds->data;
+		int proto = 0;
+		for (; d; d = d->next) {
+			switch(d->dtd) {
+			case SDP_UUID16:
+			case SDP_UUID32:
+			case SDP_UUID128:
+				proto = sdp_uuid_to_proto(&d->val.uuid);
+			break;
+			case SDP_UINT8:
+				if (proto == RFCOMM_UUID)
+					channel = d->val.int8;
+				break;
+			}
+		}
+	}
+	return channel;
+}
+
 static uint16_t get_ftp_channel(const char *dststr)
 {
 	sdp_session_t *sdp;
@@ -110,44 +135,21 @@ static uint16_t get_ftp_channel(const char *dststr)
 		return channel;
 
 	sdp_uuid128_create(&uuid, uuid_int);
-
 	search_list = sdp_list_append(NULL, &uuid);
 	attrid_list = sdp_list_append(NULL, &range);
-
 	sdp_service_search_attr_req(sdp, search_list, SDP_ATTR_REQ_RANGE,
 					attrid_list, &response_list);
-
 	r = response_list;
 
 	for (; r;r = r->next) {
 		sdp_record_t *rec = (sdp_record_t*) r->data;
 		sdp_list_t *proto_list;
 
-		// get a list of the protocol sequences
 		if (sdp_get_access_protos(rec, &proto_list ) == 0) {
 			sdp_list_t *p = proto_list;
-			// go through each protocol sequence
 			for (; p; p = p->next) {
-				sdp_list_t *pds = (sdp_list_t*)p->data;
-				// go through each protocol list of the protocol sequence
-				for (;pds;pds = pds->next) {
-					 // check the protocol attributes
-					sdp_data_t *d = (sdp_data_t*)pds->data;
-					int proto = 0;
-					for (; d; d = d->next) {
-						switch(d->dtd) {
-						case SDP_UUID16:
-						case SDP_UUID32:
-						case SDP_UUID128:
-							proto = sdp_uuid_to_proto(&d->val.uuid);
-						break;
-						case SDP_UINT8:
-							if (proto == RFCOMM_UUID)
-								channel = d->val.int8;
-							break;
-						}
-					}
-				}
+				sdp_list_t *pds = (sdp_list_t*) p->data;
+				channel = find_rfcomm_uuid(pds);
 				sdp_list_free((sdp_list_t*) p->data, 0);
 			}
 			sdp_list_free(proto_list, 0);
@@ -160,7 +162,7 @@ static uint16_t get_ftp_channel(const char *dststr)
 }
 
 
-// taken from client/bluetooth.c - bluetooth_getpacketopt
+/* taken from client/bluetooth.c - bluetooth_getpacketopt */
 static int get_packet_opt(GIOChannel *io, int *tx_mtu, int *rx_mtu)
 {
 	int sk = g_io_channel_unix_get_fd(io);
@@ -221,8 +223,7 @@ static void bt_io_callback(GIOChannel *io, GError *err, gpointer user_data)
 	if ( get_packet_opt(session->io, &tx_mtu, &rx_mtu) == 0) {
 		type = G_OBEX_TRANSPORT_PACKET;
 		g_print("PACKET transport tx:%d rx:%d\n", tx_mtu, rx_mtu);
-	}
-	else {
+	} else {
 		type = G_OBEX_TRANSPORT_STREAM;
 		g_print("STREAM transport\n");
 	}
@@ -250,13 +251,16 @@ struct gobexhlp_data* gobexhlp_connect(const char *target)
 	struct gobexhlp_data *session;
 
 	g_print("gobexhlp_connect()\n");
-	
+
 	session = g_try_malloc0(sizeof(*session));
 	if (session == NULL)
 		return NULL;
 
 	session->target = target;
 	session->channel = get_ftp_channel(target);
+
+	g_print("CHANNEL: %d\n", session->channel);
+
 	if (session->channel == 0)
 		return NULL;
 
@@ -341,13 +345,14 @@ void gobexhlp_request_new(struct gobexhlp_data *session,
 
 void gobexhlp_request_wait_free(struct gobexhlp_data *session)
 {
-	//g_mutex_lock(gobexhlp_mutex);
+	g_mutex_lock(gobexhlp_mutex);
 	g_print("WAIT for %s\n", session->request->name);
+	
 	while (session->request->complete != TRUE) {
-		g_print(".");
 		g_cond_wait(gobexhlp_cond, gobexhlp_mutex);
 	}
-	//g_mutex_unlock(gobexhlp_mutex);
+
+	g_mutex_unlock(gobexhlp_mutex);
 	
 	
 	//g_mutex_lock(session->req_mutex);
@@ -367,8 +372,7 @@ static void complete_func(GObex *obex, GError *err,
 
 	if (err != NULL) {
 		g_error("ERROR: %s\n", err->message);
-	}
-	else {
+	} else {
 		g_print("COMPLETE %s\n", session->request->name);
 		session->request->complete = TRUE;
 		g_cond_signal(gobexhlp_cond);
@@ -392,27 +396,24 @@ static void listfolder_xml_element(GMarkupParseContext *ctxt,
 			GError **gerr)
 {
 	gchar *key, *pathname, *name = NULL;
-	gint i;
 	struct gobexhlp_data *session = user_data;
 	struct gobexhlp_listfolder_req *req;
 	struct stat *stbuf;
+	gint i = 0;
 
 	stbuf = g_malloc0(sizeof(struct stat));
 
 	if ((strcasecmp("file", element) == 0)) {
 		stbuf->st_mode = S_IFREG;
-	}
-	else if ((strcasecmp("folder", element)) == 0) {
+	} else if ((strcasecmp("folder", element)) == 0) {
 		stbuf->st_mode = S_IFDIR;
 		stbuf->st_mtime = time(NULL);
-	}
-	else {
+	} else {
 		return;
 	}
 
 	req = g_hash_table_lookup(session->listfolder_req, session->path);
 
-	i = 0;
 	for (key = (gchar *) names[i]; key; key = (gchar *) names[++i]) {
 		if (g_str_equal("name", key) == TRUE) {
 			req->files = g_list_append(req->files,
@@ -475,9 +476,10 @@ static gchar *path_get_element(const char *path, uint option)
 
 	directories = g_strsplit(path, "/", -1);
 	len = g_strv_length(directories);
+
 	for (i = 0; i < len; i++)
-		if (directories[i][0] != '\0') { // to protect multi slashes
-			tmpstr = directories[i]; // last set is a file
+		if (directories[i][0] != '\0') { /* protect multi slashes */
+			tmpstr = directories[i]; /* last set is a file */
 		}
 
 	if (option == PATH_GET_FILE)
@@ -486,7 +488,7 @@ static gchar *path_get_element(const char *path, uint option)
 	else if (option == PATH_GET_DIRS) {
 		for (i = len - 1; i >= 0; i--) {
 			if (directories[i] == tmpstr) {
-				directories[i][0] = '\0'; // remove file
+				directories[i][0] = '\0'; /* remove file */
 				break;
 			}
 		}
@@ -512,6 +514,7 @@ void gobexhlp_setpath(struct gobexhlp_data* session, const char *path)
 
 	withslash = g_strdup_printf("%s/", path);
 	withslash2 = g_strdup_printf("%s/", session->setpath);
+
 	if (g_strcmp0(session->setpath, path) == 0 ||
 		g_strcmp0(session->setpath, withslash) == 0 ||
 		g_strcmp0(withslash2, path) == 0) {
@@ -529,15 +532,16 @@ void gobexhlp_setpath(struct gobexhlp_data* session, const char *path)
 							session, NULL);
 		gobexhlp_request_wait_free(session);
 		session->pathdepth = 0;
-		setpath = path + 1; // to pass first '/' character
+		setpath = path + 1; /* to pass first '/' character */
 	} else {
 		setpath = path;
 	}
 
 	directories = g_strsplit(setpath, "/", -1);
 	len = g_strv_length(directories);
+
 	for (i = 0; i < len; i++) {
-		if (directories[i][0] != '\0') { // to protect multi slashes
+		if (directories[i][0] != '\0') { /* to protect multi / */
 			//g_print("[%d]:setpath %s\n", i, directories[i]);
 			gobexhlp_request_new(session,
 					g_strdup_printf("setpath %s",
@@ -607,7 +611,7 @@ void gobexhlp_mkdir(struct gobexhlp_data* session, const char *path)
 	
 	gobexhlp_request_new(session, g_strdup_printf("mkdir %s", path));
 
-	// g_obex_mkdir also sets path, to new folder
+	/* g_obex_mkdir also sets path, to new folder */
 	g_obex_mkdir(session->obex, target, response_func, session, NULL);
 	g_free(session->setpath);
 	session->setpath = g_strdup(path);
@@ -630,8 +634,8 @@ static gboolean async_get_consumer(const void *buf, gsize len,
 	struct gobexhlp_data *session = user_data;
 	struct gobexhlp_buffer *buffer = session->buffer;
 
-	if ( buffer->tmpsize <= 10000) 
-		g_print("async_get_consumer():[%d.%d.%d]:\n", (int)len,
+	//if ( buffer->tmpsize <= 10000) 
+	g_print("async_get_consumer():[%d.%d.%d]:\n", (int)len,
 				(int)buffer->tmpsize, (int)buffer->size);
 
 	memcpy(buffer->data + buffer->tmpsize, buf, len);
@@ -641,6 +645,7 @@ static gboolean async_get_consumer(const void *buf, gsize len,
 		g_print(">>> get: file transfered\n");
 	}
 
+	//sleep(5);
 	return TRUE;
 }
 
@@ -679,7 +684,6 @@ struct gobexhlp_buffer *gobexhlp_get(struct gobexhlp_data* session,
 					G_OBEX_HDR_INVALID);
 
 	gobexhlp_request_wait_free(session);
-	//gobexhlp_listfolder(session, "/"); /* empty action */
 	
 	g_free(npath);
 	g_free(target);
@@ -693,15 +697,15 @@ static gssize async_put_producer(void *buf, gsize len, gpointer user_data)
 	struct gobexhlp_data *session = user_data;
 	struct gobexhlp_buffer *buffer = session->buffer;
 
-
 	size = buffer->size - buffer->tmpsize;
+
 	if (size > len) {
 		size = len;
 	}
 
-	if (buffer->size - buffer->tmpsize <= 40000 ||
-			buffer->tmpsize <= 30000 )
-		g_print("async_put_producer():[%d.%d.%d.%d]:\n", (int)len,
+	//if (buffer->size - buffer->tmpsize <= 40000 ||
+	//		buffer->tmpsize <= 30000 )
+	g_print("async_put_producer():[%d.%d.%d.%d]:\n", (int)len,
 				(int)buffer->tmpsize, (int)buffer->size,
 				(int)size);
 
@@ -722,14 +726,13 @@ void gobexhlp_put(struct gobexhlp_data* session,
 				const char *path)
 {
 	gchar *npath, *target;
-	struct stat *stbuf;
+	//struct stat *stbuf;
 
 	npath = path_get_element(path, PATH_GET_DIRS);
 	target = path_get_element(path, PATH_GET_FILE);
 	g_print("gobexhlp_put(%s%s)\n", npath, target);
 	
-	stbuf = gobexhlp_getattr(session, path);
-	if (stbuf->st_size > 0)
+	if (gobexhlp_getattr(session, path) != NULL)
 		gobexhlp_delete(session, path);
 
 	buffer->tmpsize = 0;
@@ -748,11 +751,11 @@ void gobexhlp_put(struct gobexhlp_data* session,
 
 void gobexhlp_touch(struct gobexhlp_data* session, const char *path)
 {
-	struct gobexhlp_buffer *buffer;
+	//struct gobexhlp_buffer *buffer;
 	struct stat *stbuf;
 
-	buffer = g_malloc0(sizeof(*buffer));
-	buffer->size = 0;
+	//buffer = g_malloc0(sizeof(*buffer));
+	//buffer->size = 0;
 	//gobexhlp_put(session, buffer, path); /* virtual touch */
 
 	stbuf = g_malloc0(sizeof(struct stat));
