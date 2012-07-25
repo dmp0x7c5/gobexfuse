@@ -35,7 +35,8 @@
 #include "helpers.c"
 
 struct gobexhlp_data* session = NULL;
-static GMainLoop *main_loop = NULL;
+static GMainLoop *main_loop;
+static GThread *main_gthread;
 
 struct options {
 	char* dststr;
@@ -63,10 +64,6 @@ static struct fuse_opt gobexfuse_opts[] =
 
 gpointer main_loop_func(gpointer user_data)
 {
-
-	//char dststr[] = "18:87:96:4D:F0:9F"; // HTC
-	//char dststr[] = "00:24:EF:08:B6:32"; // SE
-	
 	session = gobexhlp_connect(options.dststr);
 	if (session == NULL || session->io == NULL)
 		g_error("Connection to %s failed\n", options.dststr);
@@ -85,7 +82,6 @@ gpointer main_loop_func(gpointer user_data)
 
 void* gobexfuse_init(struct fuse_conn_info *conn)
 {
-	GThread * main_gthread;
 	g_thread_init(NULL);
 
 	if (options.dststr == NULL)
@@ -101,6 +97,8 @@ void* gobexfuse_init(struct fuse_conn_info *conn)
 void gobexfuse_destroy() 
 {
 	gobexhlp_disconnect(session);
+	g_main_loop_quit(main_loop);
+	g_thread_join(main_gthread);
 }
 
 static int gobexfuse_getattr(const char *path, struct stat *stbuf)

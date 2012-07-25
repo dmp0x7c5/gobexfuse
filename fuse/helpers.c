@@ -126,7 +126,7 @@ static uint16_t get_ftp_channel(const char *dststr)
 	uint32_t range = 0x0000ffff;
 	uint16_t channel = 0;
 
-	str2ba(	dststr, &dst);
+	str2ba(dststr, &dst);
 
 	sdp = sdp_connect(BDADDR_ANY, &dst, SDP_RETRY_IF_BUSY );
 	if (sdp == NULL)
@@ -399,6 +399,7 @@ static void listfolder_xml_element(GMarkupParseContext *ctxt,
 		stbuf->st_mode = S_IFDIR;
 		stbuf->st_mtime = time(NULL);
 	} else {
+		g_free(stbuf);
 		return;
 	}
 
@@ -504,10 +505,14 @@ void gobexhlp_setpath(struct gobexhlp_data* session, const char *path)
 	withslash = g_strdup_printf("%s/", path);
 	withslash2 = g_strdup_printf("%s/", session->setpath);
 
+	/* TODO: paths equality/compare should be simplified */
+
 	if (g_strcmp0(session->setpath, path) == 0 ||
 		g_strcmp0(session->setpath, withslash) == 0 ||
 		g_strcmp0(withslash2, path) == 0) {
 		g_print("setpath: already here\n");
+		g_free(withslash);
+		g_free(withslash2);
 		return;
 	}
 	g_free(withslash);
