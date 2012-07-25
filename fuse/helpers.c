@@ -79,7 +79,6 @@ struct gobexhlp_listfolder_req {
 	GList *files;
 };
 
-
 struct gobexhlp_data* gobexhlp_connect(const char *target);
 void gobexhlp_disconnect(struct gobexhlp_data* session);
 void gobexhlp_setpath(struct gobexhlp_data* session, const char *path);
@@ -87,7 +86,6 @@ GList *gobexhlp_listfolder(struct gobexhlp_data* session, const char *path);
 struct stat *gobexhlp_getattr(struct gobexhlp_data* session,
 				const char *path);
 void gobexhlp_delete(struct gobexhlp_data* session, const char *path);
-
 
 static uint16_t find_rfcomm_uuid(void *user_data)
 {
@@ -161,7 +159,6 @@ static uint16_t get_ftp_channel(const char *dststr)
 	return channel;
 }
 
-
 /* taken from client/bluetooth.c - bluetooth_getpacketopt */
 static int get_packet_opt(GIOChannel *io, int *tx_mtu, int *rx_mtu)
 {
@@ -191,7 +188,6 @@ static int get_packet_opt(GIOChannel *io, int *tx_mtu, int *rx_mtu)
 	return 0;
 }
 
-
 static void obex_callback(GObex *obex, GError *err, GObexPacket *rsp,
 							gpointer user_data)
 {
@@ -200,7 +196,6 @@ static void obex_callback(GObex *obex, GError *err, GObexPacket *rsp,
 	else
 		g_print("Connect succeeded\n");
 }
-
 
 static void bt_io_callback(GIOChannel *io, GError *err, gpointer user_data)
 {
@@ -317,7 +312,6 @@ void gobexhlp_disconnect(struct gobexhlp_data* session)
 	session = NULL;
 }
 
-
 void gobexhlp_request_new(struct gobexhlp_data *session,
 					gchar *name)
 {
@@ -342,7 +336,6 @@ void gobexhlp_request_new(struct gobexhlp_data *session,
 	g_print("REQUEST NEW %s\n", session->request->name);
 }
 
-
 void gobexhlp_request_wait_free(struct gobexhlp_data *session)
 {
 	g_mutex_lock(gobexhlp_mutex);
@@ -363,7 +356,6 @@ void gobexhlp_request_wait_free(struct gobexhlp_data *session)
 	//g_mutex_unlock(session->req_mutex);
 }
 
-
 static void complete_func(GObex *obex, GError *err,
 				gpointer user_data)
 {
@@ -381,14 +373,12 @@ static void complete_func(GObex *obex, GError *err,
 	g_mutex_unlock(gobexhlp_mutex);
 }
 
-
 static void response_func(GObex *obex, GError *err, GObexPacket *rsp,
 							gpointer user_data)
 {
 	complete_func(obex, err, user_data);
 
 }
-
 
 static void listfolder_xml_element(GMarkupParseContext *ctxt,
 			const gchar *element, const gchar **names,
@@ -463,7 +453,6 @@ static gboolean async_listfolder_consumer(const void *buf, gsize len,
 
 	return TRUE;
 }
-
 
 #define PATH_GET_FILE 1
 #define PATH_GET_DIRS 2
@@ -765,7 +754,6 @@ void gobexhlp_touch(struct gobexhlp_data* session, const char *path)
 	g_hash_table_replace(session->file_stat, g_strdup(path), stbuf);
 }
 
-
 /*
  * After rename or copy, HTC doesn't send any response,
  * SE does nothing.
@@ -795,7 +783,6 @@ void gobexhlp_move(struct gobexhlp_data* session, const char *oldpath,
 	gobexhlp_request_wait_free(session);
 }
 
-
 void gobexhlp_delete(struct gobexhlp_data* session, const char *path)
 {
 	gchar *npath, *target;
@@ -816,3 +803,4 @@ void gobexhlp_delete(struct gobexhlp_data* session, const char *path)
 
 	gobexhlp_request_wait_free(session);
 }
+

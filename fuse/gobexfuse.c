@@ -22,7 +22,6 @@
 
 // compile: gcc gobexfuse.c -o gobexfuse `pkg-config fuse --cflags` `pkg-config fuse --libs` -I/usr/include/glib-2.0 -I/usr/lib64/glib-2.0/include -I../  ../gobex/gobex.h ../gobex/gobex.c ../gobex/gobex-defs.h ../gobex/gobex-defs.c ../gobex/gobex-packet.c ../gobex/gobex-packet.h ../gobex/gobex-header.c ../gobex/gobex-header.h ../gobex/gobex-transfer.c ../gobex/gobex-debug.h ../btio/btio.h ../btio/btio.c -lbluetooth -lglib-2.0 -lgthread-2.0
 
-
 #define FUSE_USE_VERSION 26
 
 #include <stdio.h>
@@ -62,7 +61,6 @@ static struct fuse_opt gobexfuse_opts[] =
 	FUSE_OPT_END
 };
 
-
 gpointer main_loop_func(gpointer user_data)
 {
 
@@ -78,7 +76,6 @@ gpointer main_loop_func(gpointer user_data)
 
 	return 0;
 }
-
 
 /* 
  * TODO:
@@ -101,12 +98,10 @@ void* gobexfuse_init(struct fuse_conn_info *conn)
 	return 0;
 }
 
-
 void gobexfuse_destroy() 
 {
 	gobexhlp_disconnect(session);
 }
-
 
 static int gobexfuse_getattr(const char *path, struct stat *stbuf)
 {
@@ -142,14 +137,12 @@ static int gobexfuse_getattr(const char *path, struct stat *stbuf)
 	return res;
 }
 
-
 static int gobexfuse_mkdir(const char *path, mode_t mode)
 {
 	gobexhlp_mkdir(session, path);
 
 	return 0;
 }
-
 
 static int gobexfuse_readdir(const char *path, void *buf,
 			fuse_fill_dir_t filler, off_t offset,
@@ -173,7 +166,6 @@ static int gobexfuse_readdir(const char *path, void *buf,
 	return 0;
 }
 
-
 static int gobexfuse_open(const char *path, struct fuse_file_info *fi)
 {
 	struct gobexhlp_buffer *file_buffer;
@@ -188,7 +180,6 @@ static int gobexfuse_open(const char *path, struct fuse_file_info *fi)
 
 	return 0;
 }
-
 
 static int gobexfuse_read(const char *path, char *buf, size_t size,
 			off_t offset, struct fuse_file_info *fi)
@@ -206,7 +197,6 @@ static int gobexfuse_read(const char *path, char *buf, size_t size,
 
 	return asize;
 }
-
 
 static int gobexfuse_write(const char *path, const char *buf, size_t size,
 				off_t offset, struct fuse_file_info *fi)
@@ -229,7 +219,6 @@ static int gobexfuse_write(const char *path, const char *buf, size_t size,
 	return size;
 }
 
-
 static int gobexfuse_truncate(const char *path, off_t offset)
 {
 	/*
@@ -237,7 +226,6 @@ static int gobexfuse_truncate(const char *path, off_t offset)
 	 */
 	return 0;
 }
-
 
 static int gobexfuse_release(const char *path, struct fuse_file_info *fi)
 {
@@ -263,13 +251,11 @@ static int gobexfuse_utimens(const char *path, const struct timespec tv[2])
 	return 0;
 }
 
-
 static int gobexfuse_mknod(const char *path, mode_t mode, dev_t dev)
 {
 	gobexhlp_touch(session, path);
 	return 0;
 }
-
 
 static int gobexfuse_rename(const char *from, const char *to)
 {
