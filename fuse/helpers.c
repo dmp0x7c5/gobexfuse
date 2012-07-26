@@ -73,6 +73,8 @@ struct gobexhlp_data {
 	//GCond *req_cond;
 	//GMutex *data_mutex;
 	//GMutex *req_mutex;
+	gboolean vtouch;
+	gchar *vtouch_path;
 };
 
 struct gobexhlp_listfolder_req {
@@ -86,6 +88,7 @@ GList *gobexhlp_listfolder(struct gobexhlp_data* session, const char *path);
 struct stat *gobexhlp_getattr(struct gobexhlp_data* session,
 				const char *path);
 void gobexhlp_delete(struct gobexhlp_data* session, const char *path);
+void gobexhlp_touch_real(struct gobexhlp_data* session, gchar *path);
 
 static uint16_t find_rfcomm_uuid(void *user_data)
 {
@@ -227,8 +230,8 @@ static void bt_io_callback(GIOChannel *io, GError *err, gpointer user_data)
 	session->obex = g_obex_ref(obex);
 
 	g_obex_connect(session->obex, obex_callback, session, NULL,
-			G_OBEX_HDR_TARGET, OBEX_FTP_UUID, OBEX_FTP_UUID_LEN,
-			G_OBEX_HDR_INVALID);
+				G_OBEX_HDR_TARGET, OBEX_FTP_UUID,
+				OBEX_FTP_UUID_LEN, G_OBEX_HDR_INVALID);
 }
 
 
@@ -309,12 +312,17 @@ void gobexhlp_disconnect(struct gobexhlp_data* session)
 	g_cond_free(gobexhlp_cond);
 	
 	g_free(session);
-	session = NULL;
 }
 
 void gobexhlp_request_new(struct gobexhlp_data *session,
 					gchar *name)
 {
+	if (session->vtouch == TRUE) {
+		session->vtouch = FALSE;
+		gobexhlp_touch_real(session, session->vtouch_path);
+		g_free(session->vtouch_path);
+	}
+	
 	//g_mutex_lock(session->req_mutex);
 	if (session->request != NULL) {
 		/*
@@ -338,22 +346,35 @@ void gobexhlp_request_new(struct gobexhlp_data *session,
 
 void gobexhlp_request_wait_free(struct gobexhlp_data *session)
 {
+	//GTimeVal end_time;
+
 	g_mutex_lock(gobexhlp_mutex);
 	g_print("WAIT for %s\n", session->request->name);
 	
+	/*end_time = g_get_monotonic_time () + 5 * G_TIME_SPAN_SECOND;
+	g_get_current_time(&end_time);
+	g_time_val_add(&end_time, 5000001);*/
+
 	while (session->request->complete != TRUE) {
+		/*if (!g_cond_timed_wait(gobexhlp_cond, gobexhlp_mutex,
+					&end_time)) {
+			//g_print("wait PING\n");
+			g_get_current_time(&end_time);
+			g_time_val_add(&end_time, 5000000);
+			g_main_context_iteration(NULL, FALSE);
+			//break;
+		}*/
 		g_cond_wait(gobexhlp_cond, gobexhlp_mutex);
 	}
 
 	g_mutex_unlock(gobexhlp_mutex);
-	
 	
 	//g_mutex_lock(session->req_mutex);
 	g_free(session->request->name);
 	g_free(session->request);
 	session->request = NULL;
 	//g_cond_signal(session->req_cond);
-	//g_mutex_unlock(session->req_mutex);
+	//g_mutex_unlock(session->req_mutex);	
 }
 
 static void complete_func(GObex *obex, GError *err,
@@ -720,17 +741,20 @@ void gobexhlp_put(struct gobexhlp_data* session,
 				const char *path)
 {
 	gchar *npath, *target;
-	//struct stat *stbuf;
 
 	npath = path_get_element(path, PATH_GET_DIRS);
 	target = path_get_element(path, PATH_GET_FILE);
 	g_print("gobexhlp_put(%s%s)\n", npath, target);
-	
-	if (gobexhlp_getattr(session, path) != NULL)
+
+	if (g_strcmp0(path, session->vtouch_path) == 0 &&
+				session->vtouch == TRUE) {
+		session->vtouch = FALSE;
+		g_free(session->vtouch_path);
+	} else {
 		gobexhlp_delete(session, path);
+	}
 
 	buffer->tmpsize = 0;
-
 	session->buffer = buffer;
 	gobexhlp_request_new(session, g_strdup_printf("put %s", path));
 	g_obex_put_req(session->obex, async_put_producer,
@@ -743,20 +767,33 @@ void gobexhlp_put(struct gobexhlp_data* session,
 	gobexhlp_request_wait_free(session);
 }
 
+/* virtual file creation */
 void gobexhlp_touch(struct gobexhlp_data* session, const char *path)
 {
-	//struct gobexhlp_buffer *buffer;
 	struct stat *stbuf;
-
-	//buffer = g_malloc0(sizeof(*buffer));
-	//buffer->size = 0;
-	//gobexhlp_put(session, buffer, path); /* virtual touch */
+	
+	g_print("gobexhlp_touch(%s)\n", path);
 
 	stbuf = g_malloc0(sizeof(struct stat));
 	stbuf->st_mode = S_IFREG;
-	stbuf->st_mtime = stbuf->st_ctime = stbuf->st_atime = time(NULL);
 	stbuf->st_size = 0;
 	g_hash_table_replace(session->file_stat, g_strdup(path), stbuf);
+	
+	session->vtouch = TRUE;
+	session->vtouch_path = g_strdup(path);
+}
+
+void gobexhlp_touch_real(struct gobexhlp_data* session, gchar *path)
+{
+	struct gobexhlp_buffer *buffer;
+	
+	g_print("gobexhlp_touch_real(%s)\n", path);
+	
+	buffer = g_malloc0(sizeof(*buffer));
+	buffer->size = 0;
+	gobexhlp_put(session, buffer, path);
+	g_free(buffer);
+	return;
 }
 
 /*
