@@ -464,16 +464,35 @@ static const GMarkupParser parser = {
 static gboolean async_listfolder_consumer(const void *buf, gsize len,
 							gpointer user_data)
 {
-	GMarkupParseContext *ctxt;
 	struct gobexhlp_data *session = user_data;
+	struct gobexhlp_buffer *buffer = session->buffer;
 
-	ctxt = g_markup_parse_context_new(&parser, 0, session, NULL);
-	g_markup_parse_context_parse(ctxt, buf, len, NULL);
-	g_markup_parse_context_free(ctxt);
+	if (buffer->data == NULL)
+		buffer->data = g_malloc0(sizeof(char) * len);
+	else
+		buffer->data = g_realloc(buffer->data, buffer->size + len);
 
-	g_print("ASYNC_LISTFOLDER COMPLETED (%d)\n", (int)len);
+	memcpy(buffer->data + buffer->size, buf, len);
+	buffer->size += len;
 
 	return TRUE;
+}
+
+/* FIXME:'&' character breaks parse operation */
+static void complete_listfolder_func(GObex *obex, GError *err,
+				gpointer user_data)
+{
+	GMarkupParseContext *ctxt;
+	struct gobexhlp_data *session = user_data;
+	struct gobexhlp_buffer *buffer = session->buffer;
+
+	if (err == NULL) {
+		ctxt = g_markup_parse_context_new(&parser, 0, session, NULL);
+		g_markup_parse_context_parse(ctxt, buffer->data, buffer->size, NULL);
+		g_markup_parse_context_free(ctxt);
+	}
+
+	complete_func(obex, err, user_data);
 }
 
 #define PATH_GET_FILE 1
@@ -578,10 +597,11 @@ GList *gobexhlp_listfolder(struct gobexhlp_data* session, const char *path)
 {
 	GObexPacket *req;
 	struct gobexhlp_listfolder_req *lsreq;
+	struct gobexhlp_buffer *buffer;
 	guint reqpkt;
 
 	session->path = path;
-	gobexhlp_setpath( session, path);
+	gobexhlp_setpath(session, path);
 
 	g_print("gobexhlp_listfolder(%s)\n", path);
 
@@ -589,16 +609,20 @@ GList *gobexhlp_listfolder(struct gobexhlp_data* session, const char *path)
 	lsreq->files = g_list_alloc();
 	g_hash_table_replace(session->listfolder_req, g_strdup(path), lsreq);
 	
+	buffer = g_malloc0(sizeof(*buffer));
+	session->buffer = buffer;
+	
 	gobexhlp_request_new(session, g_strdup_printf("listfolder %s", path));
 	req = g_obex_packet_new(G_OBEX_OP_GET, TRUE, G_OBEX_HDR_INVALID);
 	g_obex_packet_add_bytes(req, G_OBEX_HDR_TYPE, OBEX_FTP_LS,
 						strlen(OBEX_FTP_LS) + 1);
 	reqpkt = g_obex_get_req_pkt(session->obex, req,
 				async_listfolder_consumer,
-				complete_func,
+				complete_listfolder_func,
 				session, NULL);
 
 	gobexhlp_request_wait_free(session);
+	g_free(buffer);
 
 	return lsreq->files;
 }
