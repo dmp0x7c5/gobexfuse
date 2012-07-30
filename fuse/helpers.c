@@ -754,6 +754,7 @@ void gobexhlp_put(struct gobexhlp_data* session,
 		gobexhlp_delete(session, path);
 	}
 
+	gobexhlp_setpath(session, npath);
 	buffer->tmpsize = 0;
 	session->buffer = buffer;
 	gobexhlp_request_new(session, g_strdup_printf("put %s", path));
