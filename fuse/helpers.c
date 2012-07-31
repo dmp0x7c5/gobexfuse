@@ -468,7 +468,7 @@ static gboolean async_listfolder_consumer(const void *buf, gsize len,
 	struct gobexhlp_buffer *buffer = session->buffer;
 
 	if (buffer->data == NULL)
-		buffer->data = g_malloc0(sizeof(char) * len);
+		buffer->data = g_malloc0(sizeof(*buffer->data) * len);
 	else
 		buffer->data = g_realloc(buffer->data, buffer->size + len);
 
@@ -673,18 +673,22 @@ static gboolean async_get_consumer(const void *buf, gsize len,
 	struct gobexhlp_data *session = user_data;
 	struct gobexhlp_buffer *buffer = session->buffer;
 
+	if (buffer->data == NULL)
+		buffer->data = g_malloc0(sizeof(*buffer->data) * len);
+	else
+		buffer->data = g_realloc(buffer->data, buffer->size + len);
+
 	//if ( buffer->tmpsize <= 10000) 
-	g_print("async_get_consumer():[%d.%d.%d]:\n", (int)len,
+	/*g_print("async_get_consumer():[%d.%d.%d]:\n", (int)len,
 				(int)buffer->tmpsize, (int)buffer->size);
+	*/
+	memcpy(buffer->data + buffer->size, buf, len);
+	buffer->size += len;
 
-	memcpy(buffer->data + buffer->tmpsize, buf, len);
-	buffer->tmpsize += len;
-
-	if (buffer->tmpsize == buffer->size) {
+	/*if (buffer->tmpsize == buffer->size) {
 		g_print(">>> get: file transfered\n");
-	}
+	}*/
 
-	//sleep(5);
 	return TRUE;
 }
 
@@ -702,14 +706,14 @@ struct gobexhlp_buffer *gobexhlp_get(struct gobexhlp_data* session,
 		return NULL;
 
 	buffer = g_malloc0(sizeof(*buffer));
-	buffer->data = g_malloc0(sizeof(char) * stfile->st_size);
-	buffer->size = stfile->st_size;
-	buffer->tmpsize = 0;
+	//buffer->data = g_malloc0(sizeof(char) * stfile->st_size);
+	//buffer->size = stfile->st_size;
+	//buffer->tmpsize = 0;
 	buffer->edited = FALSE;
 
-	if (buffer->size == 0) {
+	/*if (stfile->st_size == 0) {
 		return buffer;
-	}
+	}*/
 
 	npath = path_get_element(path, PATH_GET_DIRS);
 	target = path_get_element(path, PATH_GET_FILE);
@@ -723,6 +727,8 @@ struct gobexhlp_buffer *gobexhlp_get(struct gobexhlp_data* session,
 					G_OBEX_HDR_INVALID);
 
 	gobexhlp_request_wait_free(session);
+	
+	//gobexhlp_listfolder(session, npath); /* empty action */
 	
 	g_free(npath);
 	g_free(target);
