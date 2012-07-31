@@ -461,23 +461,6 @@ static const GMarkupParser parser = {
 	NULL, NULL, NULL, NULL
 };
 
-static gboolean async_listfolder_consumer(const void *buf, gsize len,
-							gpointer user_data)
-{
-	struct gobexhlp_data *session = user_data;
-	struct gobexhlp_buffer *buffer = session->buffer;
-
-	if (buffer->data == NULL)
-		buffer->data = g_malloc0(sizeof(*buffer->data) * len);
-	else
-		buffer->data = g_realloc(buffer->data, buffer->size + len);
-
-	memcpy(buffer->data + buffer->size, buf, len);
-	buffer->size += len;
-
-	return TRUE;
-}
-
 /* FIXME:'&' character breaks parse operation */
 static void complete_listfolder_func(GObex *obex, GError *err,
 				gpointer user_data)
@@ -593,6 +576,26 @@ void gobexhlp_setpath(struct gobexhlp_data* session, const char *path)
 	g_strfreev(directories);
 }
 
+static gboolean async_get_consumer(const void *buf, gsize len,
+							gpointer user_data)
+{
+	struct gobexhlp_data *session = user_data;
+	struct gobexhlp_buffer *buffer = session->buffer;
+
+	if (buffer->data == NULL)
+		buffer->data = g_malloc0(sizeof(*buffer->data) * len);
+	else
+		buffer->data = g_realloc(buffer->data, buffer->size + len);
+
+	g_print("async_get_consumer():[%d.%d]:\n", (int)len,
+					(int)buffer->size);
+	
+	memcpy(buffer->data + buffer->size, buf, len);
+	buffer->size += len;
+
+	return TRUE;
+}
+
 GList *gobexhlp_listfolder(struct gobexhlp_data* session, const char *path)
 {
 	GObexPacket *req;
@@ -617,7 +620,7 @@ GList *gobexhlp_listfolder(struct gobexhlp_data* session, const char *path)
 	g_obex_packet_add_bytes(req, G_OBEX_HDR_TYPE, OBEX_FTP_LS,
 						strlen(OBEX_FTP_LS) + 1);
 	reqpkt = g_obex_get_req_pkt(session->obex, req,
-				async_listfolder_consumer,
+				async_get_consumer,
 				complete_listfolder_func,
 				session, NULL);
 
@@ -665,31 +668,6 @@ void gobexhlp_mkdir(struct gobexhlp_data* session, const char *path)
 
 	g_free(npath);
 	g_free(target);
-}
-
-static gboolean async_get_consumer(const void *buf, gsize len,
-							gpointer user_data)
-{
-	struct gobexhlp_data *session = user_data;
-	struct gobexhlp_buffer *buffer = session->buffer;
-
-	if (buffer->data == NULL)
-		buffer->data = g_malloc0(sizeof(*buffer->data) * len);
-	else
-		buffer->data = g_realloc(buffer->data, buffer->size + len);
-
-	//if ( buffer->tmpsize <= 10000) 
-	/*g_print("async_get_consumer():[%d.%d.%d]:\n", (int)len,
-				(int)buffer->tmpsize, (int)buffer->size);
-	*/
-	memcpy(buffer->data + buffer->size, buf, len);
-	buffer->size += len;
-
-	/*if (buffer->tmpsize == buffer->size) {
-		g_print(">>> get: file transfered\n");
-	}*/
-
-	return TRUE;
 }
 
 struct gobexhlp_buffer *gobexhlp_get(struct gobexhlp_data* session,
@@ -758,7 +736,6 @@ static gssize async_put_producer(void *buf, gsize len, gpointer user_data)
 		g_print(">>> put: file transfered\n");
 		return 0;
 	}
-
 
 	memcpy(buf, buffer->data + buffer->tmpsize, size);
 	buffer->tmpsize += size;
