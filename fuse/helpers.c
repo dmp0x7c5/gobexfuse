@@ -73,6 +73,7 @@ struct gobexhlp_data {
 	//GMutex *req_mutex;
 	gboolean vtouch;
 	gchar *vtouch_path;
+	gboolean rtouch;
 };
 
 struct gobexhlp_listfolder_req {
@@ -271,8 +272,6 @@ struct gobexhlp_data* gobexhlp_connect(const char *target)
 					g_free, g_free);
 	session->listfolder_req = g_hash_table_new_full( g_str_hash,
 				g_str_equal, g_free, free_listfolder_req);
-
-	session->pathdepth = 0;
 	session->setpath = g_strdup("/");
 	
 	//session->req_cond = g_cond_new();
@@ -689,18 +688,15 @@ static gssize async_put_producer(void *buf, gsize len, gpointer user_data)
 
 	size = buffer->size - buffer->tmpsize;
 
-	if (size > len) {
+	if (size > len)
 		size = len;
-	}
 
 	g_print("async_put_producer():[%d.%d.%d.%d]:\n", (int)len,
 				(int)buffer->tmpsize, (int)buffer->size,
 				(int)size);
 
-	if (size == 0) {
-		g_print(">>> put: file transfered\n");
+	if (size == 0)
 		return 0;
-	}
 
 	memcpy(buf, buffer->data + buffer->tmpsize, size);
 	buffer->tmpsize += size;
@@ -723,7 +719,8 @@ void gobexhlp_put(struct gobexhlp_data* session,
 		session->vtouch = FALSE;
 		g_free(session->vtouch_path);
 	} else {
-		gobexhlp_delete(session, path);
+		if (session->rtouch == FALSE)
+			gobexhlp_delete(session, path);
 	}
 
 	gobexhlp_setpath(session, npath);
@@ -762,7 +759,10 @@ void gobexhlp_touch_real(struct gobexhlp_data* session, gchar *path)
 	g_print("gobexhlp_touch_real(%s)\n", path);
 	
 	buffer = g_malloc0(sizeof(*buffer));
+	//buffer->data = g_malloc(sizeof(*buffer->data));
+	session->rtouch = TRUE;
 	gobexhlp_put(session, buffer, path);
+	session->rtouch = FALSE;
 	g_free(buffer);
 	return;
 }
