@@ -333,7 +333,6 @@ void gobexhlp_request_new(struct gobexhlp_data *session,
 
 	session->request = g_malloc0(sizeof(*session->request));
 	session->request->name = name;
-	session->request->complete = FALSE;
 	
 	g_print("REQUEST NEW %s\n", session->request->name);
 }
@@ -496,6 +495,7 @@ static gchar *path_get_element(const char *path, uint option)
 	return retstr;
 }
 
+/* TODO: paths equality/compare should be simplified */
 void gobexhlp_setpath(struct gobexhlp_data* session, const char *path)
 {
 	guint len, i;
@@ -506,8 +506,6 @@ void gobexhlp_setpath(struct gobexhlp_data* session, const char *path)
 
 	withslash = g_strdup_printf("%s/", path);
 	withslash2 = g_strdup_printf("%s/", session->setpath);
-
-	/* TODO: paths equality/compare should be simplified */
 
 	if (g_strcmp0(session->setpath, path) == 0 ||
 		g_strcmp0(session->setpath, withslash) == 0 ||
@@ -566,7 +564,7 @@ static gboolean async_get_consumer(const void *buf, gsize len,
 
 	g_print("async_get_consumer():[%d.%d]:\n", (int)len,
 					(int)buffer->size);
-	
+
 	memcpy(buffer->data + buffer->size, buf, len);
 	buffer->size += len;
 
@@ -661,7 +659,6 @@ struct gobexhlp_buffer *gobexhlp_get(struct gobexhlp_data* session,
 		return NULL;
 
 	buffer = g_malloc0(sizeof(*buffer));
-	buffer->edited = FALSE;
 	
 	if (stfile->st_size == 0)
 		return buffer;
@@ -752,7 +749,6 @@ void gobexhlp_touch(struct gobexhlp_data* session, const char *path)
 
 	stbuf = g_malloc0(sizeof(struct stat));
 	stbuf->st_mode = S_IFREG;
-	stbuf->st_size = 0;
 	g_hash_table_replace(session->file_stat, g_strdup(path), stbuf);
 	
 	session->vtouch = TRUE;
@@ -766,7 +762,6 @@ void gobexhlp_touch_real(struct gobexhlp_data* session, gchar *path)
 	g_print("gobexhlp_touch_real(%s)\n", path);
 	
 	buffer = g_malloc0(sizeof(*buffer));
-	buffer->size = 0;
 	gobexhlp_put(session, buffer, path);
 	g_free(buffer);
 	return;
