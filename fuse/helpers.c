@@ -69,9 +69,7 @@ struct gobexhlp_data {
 	gchar *setpath;
 	struct gobexhlp_request *request;
 	struct gobexhlp_buffer *buffer;
-	//GCond *data_cond;
 	//GCond *req_cond;
-	//GMutex *data_mutex;
 	//GMutex *req_mutex;
 	gboolean vtouch;
 	gchar *vtouch_path;
@@ -277,8 +275,6 @@ struct gobexhlp_data* gobexhlp_connect(const char *target)
 	session->pathdepth = 0;
 	session->setpath = g_strdup("/");
 	
-	//session->data_cond = g_cond_new();
-	//session->data_mutex = g_mutex_new(); 
 	//session->req_cond = g_cond_new();
 	//session->req_mutex = g_mutex_new(); 
 	
@@ -303,8 +299,6 @@ void gobexhlp_disconnect(struct gobexhlp_data* session)
 	g_hash_table_remove_all(session->listfolder_req);
 	g_free(session->setpath);
 
-	//g_mutex_free(session->data_mutex);
-	//g_cond_free(session->data_cond);
 	//g_mutex_free(session->req_mutex);
 	//g_cond_free(session->req_cond);
 
@@ -346,26 +340,11 @@ void gobexhlp_request_new(struct gobexhlp_data *session,
 
 void gobexhlp_request_wait_free(struct gobexhlp_data *session)
 {
-	//GTimeVal end_time;
-
 	g_mutex_lock(gobexhlp_mutex);
 	g_print("WAIT for %s\n", session->request->name);
 	
-	/*end_time = g_get_monotonic_time () + 5 * G_TIME_SPAN_SECOND;
-	g_get_current_time(&end_time);
-	g_time_val_add(&end_time, 5000001);*/
-
-	while (session->request->complete != TRUE) {
-		/*if (!g_cond_timed_wait(gobexhlp_cond, gobexhlp_mutex,
-					&end_time)) {
-			//g_print("wait PING\n");
-			g_get_current_time(&end_time);
-			g_time_val_add(&end_time, 5000000);
-			g_main_context_iteration(NULL, FALSE);
-			//break;
-		}*/
+	while (session->request->complete != TRUE)
 		g_cond_wait(gobexhlp_cond, gobexhlp_mutex);
-	}
 
 	g_mutex_unlock(gobexhlp_mutex);
 	
@@ -542,7 +521,6 @@ void gobexhlp_setpath(struct gobexhlp_data* session, const char *path)
 	g_free(withslash2);
 
 	if (path[0] == '/' && session->pathdepth > 0) {
-		//g_print("[/]:setroot /\n");
 		gobexhlp_request_new(session,
 				g_strdup_printf("setpath root"));
 		g_obex_setpath(session->obex, NULL, response_func,
@@ -559,7 +537,6 @@ void gobexhlp_setpath(struct gobexhlp_data* session, const char *path)
 
 	for (i = 0; i < len; i++) {
 		if (directories[i][0] != '\0') { /* to protect multi / */
-			//g_print("[%d]:setpath %s\n", i, directories[i]);
 			gobexhlp_request_new(session,
 					g_strdup_printf("setpath %s",
 						directories[i]));
@@ -684,14 +661,10 @@ struct gobexhlp_buffer *gobexhlp_get(struct gobexhlp_data* session,
 		return NULL;
 
 	buffer = g_malloc0(sizeof(*buffer));
-	//buffer->data = g_malloc0(sizeof(char) * stfile->st_size);
-	//buffer->size = stfile->st_size;
-	//buffer->tmpsize = 0;
 	buffer->edited = FALSE;
-
-	/*if (stfile->st_size == 0) {
+	
+	if (stfile->st_size == 0)
 		return buffer;
-	}*/
 
 	npath = path_get_element(path, PATH_GET_DIRS);
 	target = path_get_element(path, PATH_GET_FILE);
@@ -703,11 +676,8 @@ struct gobexhlp_buffer *gobexhlp_get(struct gobexhlp_data* session,
 					complete_func, session, NULL,
 					G_OBEX_HDR_NAME, target,
 					G_OBEX_HDR_INVALID);
-
 	gobexhlp_request_wait_free(session);
-	
-	//gobexhlp_listfolder(session, npath); /* empty action */
-	
+
 	g_free(npath);
 	g_free(target);
 	
@@ -726,8 +696,6 @@ static gssize async_put_producer(void *buf, gsize len, gpointer user_data)
 		size = len;
 	}
 
-	//if (buffer->size - buffer->tmpsize <= 40000 ||
-	//		buffer->tmpsize <= 30000 )
 	g_print("async_put_producer():[%d.%d.%d.%d]:\n", (int)len,
 				(int)buffer->tmpsize, (int)buffer->size,
 				(int)size);
