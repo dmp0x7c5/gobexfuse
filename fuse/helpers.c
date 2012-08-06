@@ -42,8 +42,8 @@ gcc  -I/usr/include/glib-2.0 -I/usr/lib64/glib-2.0/include -I../  ../gobex/gobex
 
 #define OBEX_FTP_LS "x-obex/folder-listing"
 
-static GCond *gobexhlp_cond;
-static GMutex *gobexhlp_mutex;
+static GCond *gobexhlp_cond, *req_cond;
+static GMutex *gobexhlp_mutex, *req_mutex;
 
 struct gobexhlp_request {
 	gchar *name;
@@ -69,8 +69,6 @@ struct gobexhlp_data {
 	gchar *setpath;
 	struct gobexhlp_request *request;
 	struct gobexhlp_buffer *buffer;
-	//GCond *req_cond;
-	//GMutex *req_mutex;
 	gboolean vtouch;
 	gchar *vtouch_path;
 	gboolean rtouch;
@@ -274,11 +272,10 @@ struct gobexhlp_data* gobexhlp_connect(const char *target)
 				g_str_equal, g_free, free_listfolder_req);
 	session->setpath = g_strdup("/");
 	
-	//session->req_cond = g_cond_new();
-	//session->req_mutex = g_mutex_new(); 
-	
 	gobexhlp_mutex = g_mutex_new();
 	gobexhlp_cond = g_cond_new();
+	req_cond = g_cond_new();
+	req_mutex = g_mutex_new(); 
 
 	return session;
 }
@@ -298,11 +295,10 @@ void gobexhlp_disconnect(struct gobexhlp_data* session)
 	g_hash_table_remove_all(session->listfolder_req);
 	g_free(session->setpath);
 
-	//g_mutex_free(session->req_mutex);
-	//g_cond_free(session->req_cond);
-
 	g_mutex_free(gobexhlp_mutex);
 	g_cond_free(gobexhlp_cond);
+	g_mutex_free(req_mutex);
+	g_cond_free(req_cond);
 	
 	g_free(session);
 }
@@ -316,19 +312,19 @@ void gobexhlp_request_new(struct gobexhlp_data *session,
 		g_free(session->vtouch_path);
 	}
 	
-	//g_mutex_lock(session->req_mutex);
+	g_mutex_lock(req_mutex);
 	if (session->request != NULL) {
 		/*
 		 * This check in unnecessary in fuse 
 		 * single threaded mode (-s option)
 		 */
-		g_error("Another request (%s) active!\n",
+		g_print("Another request (%s) active!\n",
 				session->request->name);
 		// wait till the current request ends
-	//	while (session->request != NULL)
-	//		g_cond_wait(session->req_cond, session->req_mutex);
+		while (session->request != NULL)
+			g_cond_wait(req_cond, req_mutex);
 	}
-	//g_mutex_unlock(session->req_mutex);
+	g_mutex_unlock(req_mutex);
 
 	session->request = g_malloc0(sizeof(*session->request));
 	session->request->name = name;
@@ -346,12 +342,12 @@ void gobexhlp_request_wait_free(struct gobexhlp_data *session)
 
 	g_mutex_unlock(gobexhlp_mutex);
 	
-	//g_mutex_lock(session->req_mutex);
+	g_mutex_lock(req_mutex);
 	g_free(session->request->name);
 	g_free(session->request);
 	session->request = NULL;
-	//g_cond_signal(session->req_cond);
-	//g_mutex_unlock(session->req_mutex);	
+	g_cond_signal(req_cond);
+	g_mutex_unlock(req_mutex);	
 }
 
 static void complete_func(GObex *obex, GError *err,
@@ -406,7 +402,7 @@ static void listfolder_xml_element(GMarkupParseContext *ctxt,
 	for (key = (gchar *) names[i]; key; key = (gchar *) names[++i]) {
 		if (g_str_equal("name", key) == TRUE) {
 			req->files = g_list_append(req->files,
-					g_strdup(values[i]));
+						g_strdup(values[i]));
 			name = g_strdup(values[i]);
 
 		} else if (g_str_equal("size", key) == TRUE) {
@@ -438,7 +434,7 @@ static const GMarkupParser parser = {
 	NULL, NULL, NULL, NULL
 };
 
-/* FIXME:'&' character breaks parse operation */
+/* '&' character breaks parse operation, should be escaped by client */
 static void complete_listfolder_func(GObex *obex, GError *err,
 				gpointer user_data)
 {
