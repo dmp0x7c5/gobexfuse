@@ -38,11 +38,34 @@ struct gobexhlp_data* session = NULL;
 static GMainLoop *main_loop;
 static GThread *main_gthread;
 
+static gboolean busy;
+static GCond *busy_cond;
+static GMutex *busy_mutex;
+
 struct options {
 	char* dststr;
 } options;
 
 #define GOBEXFUSE_OPT_KEY(t, p, v) { t, offsetof(struct options, p), v }
+
+void start_action() 
+{
+	g_mutex_lock(busy_mutex);
+	while (busy == TRUE)
+		g_cond_wait(busy_cond, busy_mutex);
+	g_print("start action\n");
+	busy = TRUE;
+	g_mutex_unlock(busy_mutex);
+}
+
+void end_action()
+{
+	g_print("end action\n");
+	g_mutex_lock(busy_mutex);
+	busy = FALSE;
+	g_cond_signal(busy_cond);
+	g_mutex_unlock(busy_mutex);
+}
 
 enum
 {
@@ -91,6 +114,10 @@ void* gobexfuse_init(struct fuse_conn_info *conn)
 	conn->async_read = 0;
 	conn->want &= ~FUSE_CAP_ASYNC_READ;
 	
+	busy = FALSE;
+	busy_mutex = g_mutex_new();
+	busy_cond = g_cond_new();
+	
 	return 0;
 }
 
@@ -99,6 +126,9 @@ void gobexfuse_destroy()
 	gobexhlp_disconnect(session);
 	g_main_loop_quit(main_loop);
 	g_thread_join(main_gthread);
+
+	g_mutex_free(busy_mutex);
+	g_cond_free(busy_cond);
 }
 
 static int gobexfuse_getattr(const char *path, struct stat *stbuf)
@@ -129,7 +159,6 @@ static int gobexfuse_getattr(const char *path, struct stat *stbuf)
 		stbuf->st_blksize = 512;
 		stbuf->st_blocks = (stbuf->st_size + stbuf->st_blksize)
 						/ stbuf->st_blksize;
-
 	}
 
 	return res;
@@ -137,7 +166,9 @@ static int gobexfuse_getattr(const char *path, struct stat *stbuf)
 
 static int gobexfuse_mkdir(const char *path, mode_t mode)
 {
+	start_action();
 	gobexhlp_mkdir(session, path);
+	end_action();
 
 	return 0;
 }
@@ -153,13 +184,16 @@ static int gobexfuse_readdir(const char *path, void *buf,
 	filler(buf, ".", NULL, 0);
 	filler(buf, "..", NULL, 0);
 	
+	start_action();
 	files = gobexhlp_listfolder(session, path);
+	end_action();
 	len = g_list_length(files);
 
 	for (i = 1; i < len; i++) { // element for i==0 is NULL
 		string = g_list_nth_data(files, i);
 		filler(buf, string, NULL, 0);
 	}
+
 
 	return 0;
 }
@@ -169,7 +203,9 @@ static int gobexfuse_open(const char *path, struct fuse_file_info *fi)
 	struct gobexhlp_buffer *file_buffer;
 	g_print("gobexfuse_open(%s)\n", path);
 
+	start_action();
 	file_buffer = gobexhlp_get(session, path);
+	end_action();
 
 	if (file_buffer == NULL)
 		return -ENOENT;
@@ -200,7 +236,6 @@ static int gobexfuse_write(const char *path, const char *buf, size_t size,
 				off_t offset, struct fuse_file_info *fi)
 {
 	gsize nsize;
-
 	struct gobexhlp_buffer *file_buffer = (struct gobexhlp_buffer*)fi->fh;
 	
 	if (file_buffer->size < offset + size) {
@@ -210,8 +245,8 @@ static int gobexfuse_write(const char *path, const char *buf, size_t size,
 	} else {
 		nsize = file_buffer->size;
 	}
-	file_buffer->edited = TRUE;
 
+	file_buffer->edited = TRUE;
 	memcpy(file_buffer->data + offset, buf, size);
 
 	return size;
@@ -232,7 +267,9 @@ static int gobexfuse_release(const char *path, struct fuse_file_info *fi)
 	
 	if (file_buffer->edited == TRUE) {
 		// send new file to device
+		start_action();
 		gobexhlp_put(session, file_buffer, path);
+		end_action();
 	}
 
 	g_free(file_buffer->data);
@@ -251,19 +288,25 @@ static int gobexfuse_utimens(const char *path, const struct timespec tv[2])
 
 static int gobexfuse_mknod(const char *path, mode_t mode, dev_t dev)
 {
+	start_action();
 	gobexhlp_touch(session, path);
+	end_action();
 	return 0;
 }
 
 static int gobexfuse_rename(const char *from, const char *to)
 {
+	start_action();
 	gobexhlp_move(session, from, to);
+	end_action();
 	return 0;
 }
 
 static int gobexfuse_unlink(const char *path)
 {
+	start_action();
 	gobexhlp_delete(session, path);
+	end_action();
 	return 0;
 }
 

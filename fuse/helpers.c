@@ -311,8 +311,9 @@ void gobexhlp_request_new(struct gobexhlp_data *session,
 		gobexhlp_touch_real(session, session->vtouch_path);
 		g_free(session->vtouch_path);
 	}
-	
+
 	g_mutex_lock(req_mutex);
+	
 	if (session->request != NULL) {
 		/*
 		 * This check in unnecessary in fuse 
@@ -324,6 +325,7 @@ void gobexhlp_request_new(struct gobexhlp_data *session,
 		while (session->request != NULL)
 			g_cond_wait(req_cond, req_mutex);
 	}
+
 	g_mutex_unlock(req_mutex);
 
 	session->request = g_malloc0(sizeof(*session->request));
@@ -334,8 +336,8 @@ void gobexhlp_request_new(struct gobexhlp_data *session,
 
 void gobexhlp_request_wait_free(struct gobexhlp_data *session)
 {
-	g_mutex_lock(gobexhlp_mutex);
 	g_print("WAIT for %s\n", session->request->name);
+	g_mutex_lock(gobexhlp_mutex);
 	
 	while (session->request->complete != TRUE)
 		g_cond_wait(gobexhlp_cond, gobexhlp_mutex);
@@ -347,7 +349,7 @@ void gobexhlp_request_wait_free(struct gobexhlp_data *session)
 	g_free(session->request);
 	session->request = NULL;
 	g_cond_signal(req_cond);
-	g_mutex_unlock(req_mutex);	
+	g_mutex_unlock(req_mutex);
 }
 
 static void complete_func(GObex *obex, GError *err,
@@ -593,7 +595,6 @@ GList *gobexhlp_listfolder(struct gobexhlp_data* session, const char *path)
 				async_get_consumer,
 				complete_listfolder_func,
 				session, NULL);
-
 	gobexhlp_request_wait_free(session);
 	g_free(buffer);
 
@@ -755,7 +756,6 @@ void gobexhlp_touch_real(struct gobexhlp_data* session, gchar *path)
 	g_print("gobexhlp_touch_real(%s)\n", path);
 	
 	buffer = g_malloc0(sizeof(*buffer));
-	//buffer->data = g_malloc(sizeof(*buffer->data));
 	session->rtouch = TRUE;
 	gobexhlp_put(session, buffer, path);
 	session->rtouch = FALSE;
