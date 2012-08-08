@@ -338,6 +338,7 @@ int main(int argc, char *argv[])
 	if (fuse_opt_parse(&args, &options, gobexfuse_opts, NULL) == -1)
 		return -1;
 
+	fuse_opt_add_arg(&args, "-s"); /* force single threaded mode */
 	retfuse = fuse_main(args.argc, args.argv, &gobexfuse_oper, NULL);
 	
 	fuse_opt_free_args(&args);
