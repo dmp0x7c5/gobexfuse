@@ -359,7 +359,8 @@ static void complete_func(GObex *obex, GError *err,
 	g_mutex_lock(gobexhlp_mutex);
 
 	if (err != NULL) {
-		g_error("ERROR: %s\n", err->message);
+		g_print("ERROR: %s\n", err->message);
+		gobexhlp_disconnect(session);
 	} else {
 		g_print("COMPLETE %s\n", session->request->name);
 		session->request->complete = TRUE;
@@ -716,8 +717,9 @@ void gobexhlp_put(struct gobexhlp_data* session,
 		session->vtouch = FALSE;
 		g_free(session->vtouch_path);
 	} else {
-		if (session->rtouch == FALSE)
-			gobexhlp_delete(session, path);
+		/* do not delete existing file */
+		/*if (session->rtouch == FALSE)
+			gobexhlp_delete(session, path);*/
 	}
 
 	gobexhlp_setpath(session, npath);
