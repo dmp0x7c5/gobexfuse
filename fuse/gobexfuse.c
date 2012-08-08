@@ -29,8 +29,12 @@
 #include <fcntl.h>
 #include <string.h>
 
-#include <fuse.h>
+#include <unistd.h>
+
 #include <fuse/fuse_opt.h>
+#include <fuse/fuse_lowlevel.h>
+#include <fuse/fuse_common.h>
+#include <fuse.h>
 
 #include "helpers.c"
 
@@ -105,12 +109,13 @@ gpointer main_loop_func(gpointer user_data)
 
 void* gobexfuse_init(struct fuse_conn_info *conn)
 {
-	g_thread_init(NULL);
+	/*g_thread_init(NULL);
 
 	if (options.dststr == NULL)
 		g_error("Target not specified");
 
 	main_gthread = g_thread_create(main_loop_func, NULL, TRUE, NULL);
+	*/
 	conn->async_read = 0;
 	conn->want &= ~FUSE_CAP_ASYNC_READ;
 	
@@ -170,6 +175,16 @@ static int gobexfuse_mkdir(const char *path, mode_t mode)
 	gobexhlp_mkdir(session, path);
 	end_action();
 
+	return 0;
+}
+
+static int gobexfuse_access(const char *path, int i)
+{
+	return 0;
+}
+
+static int gobexfuse_opendir(const char *path, struct fuse_file_info *fi)
+{
 	return 0;
 }
 
@@ -312,6 +327,8 @@ static int gobexfuse_unlink(const char *path)
 
 static struct fuse_operations gobexfuse_oper = {
 	.getattr = gobexfuse_getattr,
+	.access = gobexfuse_access,
+	.opendir = gobexfuse_opendir,
 	.readdir = gobexfuse_readdir,
 	.mkdir = gobexfuse_mkdir,
 	.open = gobexfuse_open,
@@ -327,7 +344,7 @@ static struct fuse_operations gobexfuse_oper = {
 	.init = gobexfuse_init,
 	.destroy = gobexfuse_destroy,
 };
-
+/*
 int main(int argc, char *argv[])
 {
 	int retfuse;
@@ -338,10 +355,108 @@ int main(int argc, char *argv[])
 	if (fuse_opt_parse(&args, &options, gobexfuse_opts, NULL) == -1)
 		return -1;
 
-	fuse_opt_add_arg(&args, "-s"); /* force single threaded mode */
+	// fuse_opt_add_arg(&args, "-s");  force single threaded mode 
 	retfuse = fuse_main(args.argc, args.argv, &gobexfuse_oper, NULL);
 	
 	fuse_opt_free_args(&args);
 	return retfuse;
+}*/
+
+GIOChannel *channel;
+int fd;
+struct fuse_chan *ch;
+size_t bufsize;
+struct fuse_session *se;
+char *buf;
+
+gboolean my_callback(GIOChannel *source, GIOCondition condition, gpointer data)
+{
+	int res = 0;
+	struct fuse_chan *tmpch = ch;
+	g_print("// callback begin\n");
+
+	res = fuse_chan_recv(&tmpch, buf, bufsize);
+	g_print("|| recv'ed \n");
+	fuse_session_process(se, buf, res, ch);
+
+	g_print("\\\\ callback end\n");
+
+	//if(!fuse_session_exited(se))
+	//	return FALSE;
+
+	return TRUE;
 }
 
+
+int gobexfuse_session_loop()
+{
+	int res = 0;
+	GIOCondition cond;
+
+	ch = fuse_session_next_chan(se, NULL);
+	bufsize = fuse_chan_bufsize(ch);
+
+	buf = (char*)g_malloc(bufsize);
+	if (!buf) {
+		fprintf(stderr, "fuse: failed to allocate read buffer\n");
+		return -1;
+	}
+
+	fd = fuse_chan_fd(ch);
+	g_thread_init(NULL);
+	channel = g_io_channel_unix_new(fd);
+	main_loop = g_main_loop_new(NULL, FALSE);
+
+	session = gobexhlp_connect(options.dststr);
+	if (session == NULL || session->io == NULL)
+		g_error("Connection to %s failed\n", options.dststr);
+	
+	g_io_channel_set_encoding(channel, NULL, NULL);
+	g_io_channel_set_buffered(channel, TRUE);
+	cond = G_IO_IN | G_IO_HUP | G_IO_ERR | G_IO_NVAL;
+	g_io_add_watch(channel, cond, (GIOFunc)my_callback, NULL);
+	g_main_loop_run(main_loop);
+
+	g_io_channel_shutdown(channel,TRUE,NULL);
+	g_free(buf);
+	fuse_session_reset(se);
+	return res < 0 ? -1 : 0;
+}
+
+
+
+int main(int argc, const char *argv[])
+{
+	
+	int err = -1;
+	char *mountpoint;
+	struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
+	
+	memset(&options, 0, sizeof(struct options));
+
+	if (fuse_opt_parse(&args, &options, gobexfuse_opts, NULL) == -1)
+		return -1;
+	
+	if (fuse_parse_cmdline(&args, &mountpoint, NULL, NULL) != -1 &&
+	    		(ch = fuse_mount(mountpoint, &args)) != NULL) {
+		struct fuse *fuse;
+
+		fuse = fuse_new(ch, &args, &gobexfuse_oper,
+				sizeof(gobexfuse_oper), NULL);
+		se = fuse_get_session(fuse);
+
+		if (se != NULL) {
+			if (fuse_set_signal_handlers(se) != -1) {
+				//fuse_session_add_chan(se, ch);
+				err = gobexfuse_session_loop();
+				fuse_remove_signal_handlers(se);
+				fuse_session_remove_chan(ch);
+			}
+			fuse_session_destroy(se);
+		}
+		fuse_unmount(mountpoint, ch);
+	}
+	fuse_opt_free_args(&args);
+
+	return 0;
+}
