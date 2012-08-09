@@ -211,7 +211,7 @@ static void bt_io_callback(GIOChannel *io, GError *err, gpointer user_data)
 	g_io_channel_set_flags(session->io, G_IO_FLAG_NONBLOCK, NULL);
 	g_io_channel_set_close_on_unref(session->io, TRUE);
 
-	if ( get_packet_opt(session->io, &tx_mtu, &rx_mtu) == 0) {
+	if (get_packet_opt(session->io, &tx_mtu, &rx_mtu) == 0) {
 		type = G_OBEX_TRANSPORT_PACKET;
 		g_print("PACKET transport tx:%d rx:%d\n", tx_mtu, rx_mtu);
 	} else {
@@ -328,11 +328,22 @@ void gobexhlp_request_new(struct gobexhlp_data *session,
 	session->request->name = name;
 	
 	g_print("REQUEST NEW %s\n", session->request->name);
+	
+	/* 
+	 * suspend/resume operations recreates g_io_add_watch(),
+	 * it fixes obex->io freeze during transfer
+	 */
+	g_obex_suspend(session->obex); 
+	g_obex_resume(session->obex);
 }
 
 void gobexhlp_request_wait_free(struct gobexhlp_data *session)
 {
 	g_print("WAIT for %s\n", session->request->name);
+	
+	g_obex_suspend(session->obex);
+	g_obex_resume(session->obex);
+
 	g_mutex_lock(gobexhlp_mutex);
 	
 	while (session->request->complete != TRUE)
@@ -352,15 +363,16 @@ static void complete_func(GObex *obex, GError *err,
 				gpointer user_data)
 {
 	struct gobexhlp_data *session = user_data;
+	
 	g_mutex_lock(gobexhlp_mutex);
+	session->request->complete = TRUE;
+	g_cond_signal(gobexhlp_cond);
 
 	if (err != NULL) {
 		g_print("ERROR: %s\n", err->message);
 		gobexhlp_disconnect(session);
 	} else {
 		g_print("COMPLETE %s\n", session->request->name);
-		session->request->complete = TRUE;
-		g_cond_signal(gobexhlp_cond);
 	}
 
 	g_mutex_unlock(gobexhlp_mutex);
@@ -562,6 +574,9 @@ static gboolean async_get_consumer(const void *buf, gsize len,
 	memcpy(buffer->data + buffer->size, buf, len);
 	buffer->size += len;
 
+	g_obex_suspend(session->obex);
+	g_obex_resume(session->obex);
+	
 	return TRUE;
 }
 
@@ -620,7 +635,6 @@ void gobexhlp_mkdir(struct gobexhlp_data* session, const char *path)
 	gobexhlp_setpath(session, npath);
 	
 	gobexhlp_request_new(session, g_strdup_printf("mkdir %s", path));
-
 	/* g_obex_mkdir also sets path, to new folder */
 	g_obex_mkdir(session->obex, target, response_func, session, NULL);
 	g_free(session->setpath);
@@ -689,6 +703,9 @@ static gssize async_put_producer(void *buf, gsize len, gpointer user_data)
 				(int)buffer->tmpsize, (int)buffer->size,
 				(int)size);
 
+	g_obex_suspend(session->obex);
+	g_obex_resume(session->obex);
+	
 	if (size == 0)
 		return 0;
 
@@ -712,11 +729,11 @@ void gobexhlp_put(struct gobexhlp_data* session,
 				session->vtouch == TRUE) {
 		session->vtouch = FALSE;
 		g_free(session->vtouch_path);
-	} else {
+	} //else {
 		/* do not delete existing file */
 		/*if (session->rtouch == FALSE)
 			gobexhlp_delete(session, path);*/
-	}
+	//}
 
 	gobexhlp_setpath(session, npath);
 	buffer->tmpsize = 0;
