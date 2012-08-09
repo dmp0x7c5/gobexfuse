@@ -27,12 +27,8 @@
 #include <fcntl.h>
 #include <string.h>
 
-#include <unistd.h>
-
-#include <fuse/fuse_opt.h>
-#include <fuse/fuse_lowlevel.h>
-#include <fuse/fuse_common.h>
 #include <fuse.h>
+#include <fuse/fuse_opt.h>
 
 #include "helpers.c"
 
@@ -40,34 +36,11 @@ struct gobexhlp_data* session = NULL;
 static GMainLoop *main_loop;
 static GThread *main_gthread;
 
-static gboolean busy;
-static GCond *busy_cond;
-static GMutex *busy_mutex;
-
 struct options {
 	char* dststr;
 } options;
 
 #define GOBEXFUSE_OPT_KEY(t, p, v) { t, offsetof(struct options, p), v }
-
-void start_action() 
-{
-	/*g_mutex_lock(busy_mutex);
-	while (busy == TRUE)
-		g_cond_wait(busy_cond, busy_mutex);
-	g_print("start action\n");
-	busy = TRUE;
-	g_mutex_unlock(busy_mutex);*/
-}
-
-void end_action()
-{
-	/*g_print("end action\n");
-	g_mutex_lock(busy_mutex);
-	busy = FALSE;
-	g_cond_signal(busy_cond);
-	g_mutex_unlock(busy_mutex);*/
-}
 
 enum
 {
@@ -87,7 +60,7 @@ static struct fuse_opt gobexfuse_opts[] =
 	FUSE_OPT_END
 };
 
-/*gpointer main_loop_func(gpointer user_data)
+gpointer main_loop_func(gpointer user_data)
 {
 	session = gobexhlp_connect(options.dststr);
 	if (session == NULL || session->io == NULL)
@@ -97,7 +70,7 @@ static struct fuse_opt gobexfuse_opts[] =
 	g_main_loop_run(main_loop);
 
 	return 0;
-}*/
+}
 
 /* 
  * TODO:
@@ -107,19 +80,14 @@ static struct fuse_opt gobexfuse_opts[] =
 
 void* gobexfuse_init(struct fuse_conn_info *conn)
 {
-	/*g_thread_init(NULL);
+	g_thread_init(NULL);
 
 	if (options.dststr == NULL)
 		g_error("Target not specified");
 
 	main_gthread = g_thread_create(main_loop_func, NULL, TRUE, NULL);
-	*/
 	conn->async_read = 0;
 	conn->want &= ~FUSE_CAP_ASYNC_READ;
-	
-//	busy = FALSE;
-//	busy_mutex = g_mutex_new();
-//	busy_cond = g_cond_new();
 	
 	return 0;
 }
@@ -129,9 +97,6 @@ void gobexfuse_destroy()
 	gobexhlp_disconnect(session);
 	g_main_loop_quit(main_loop);
 	g_thread_join(main_gthread);
-
-	g_mutex_free(busy_mutex);
-	g_cond_free(busy_cond);
 }
 
 static int gobexfuse_getattr(const char *path, struct stat *stbuf)
@@ -169,20 +134,8 @@ static int gobexfuse_getattr(const char *path, struct stat *stbuf)
 
 static int gobexfuse_mkdir(const char *path, mode_t mode)
 {
-	start_action();
 	gobexhlp_mkdir(session, path);
-	end_action();
 
-	return 0;
-}
-
-static int gobexfuse_access(const char *path, int i)
-{
-	return 0;
-}
-
-static int gobexfuse_opendir(const char *path, struct fuse_file_info *fi)
-{
 	return 0;
 }
 
@@ -197,9 +150,7 @@ static int gobexfuse_readdir(const char *path, void *buf,
 	filler(buf, ".", NULL, 0);
 	filler(buf, "..", NULL, 0);
 	
-	start_action();
 	files = gobexhlp_listfolder(session, path);
-	end_action();
 	len = g_list_length(files);
 
 	for (i = 1; i < len; i++) { // element for i==0 is NULL
@@ -216,9 +167,7 @@ static int gobexfuse_open(const char *path, struct fuse_file_info *fi)
 	struct gobexhlp_buffer *file_buffer;
 	g_print("gobexfuse_open(%s)\n", path);
 
-	start_action();
 	file_buffer = gobexhlp_get(session, path);
-	end_action();
 
 	if (file_buffer == NULL)
 		return -ENOENT;
@@ -278,12 +227,8 @@ static int gobexfuse_release(const char *path, struct fuse_file_info *fi)
 	struct gobexhlp_buffer *file_buffer = (struct gobexhlp_buffer*)fi->fh;
 	g_print("gobexfuse_release(%s)\n", path);
 	
-	if (file_buffer->edited == TRUE) {
-		// send new file to device
-		start_action();
-		gobexhlp_put(session, file_buffer, path);
-		end_action();
-	}
+	if (file_buffer->edited == TRUE)
+		gobexhlp_put(session, file_buffer, path); /* send to device */
 
 	g_free(file_buffer->data);
 	g_free(file_buffer);
@@ -301,32 +246,27 @@ static int gobexfuse_utimens(const char *path, const struct timespec tv[2])
 
 static int gobexfuse_mknod(const char *path, mode_t mode, dev_t dev)
 {
-	start_action();
 	gobexhlp_touch(session, path);
-	end_action();
+
 	return 0;
 }
 
 static int gobexfuse_rename(const char *from, const char *to)
 {
-	start_action();
 	gobexhlp_move(session, from, to);
-	end_action();
+
 	return 0;
 }
 
 static int gobexfuse_unlink(const char *path)
 {
-	start_action();
 	gobexhlp_delete(session, path);
-	end_action();
+
 	return 0;
 }
 
 static struct fuse_operations gobexfuse_oper = {
 	.getattr = gobexfuse_getattr,
-	.access = gobexfuse_access,
-	.opendir = gobexfuse_opendir,
 	.readdir = gobexfuse_readdir,
 	.mkdir = gobexfuse_mkdir,
 	.open = gobexfuse_open,
@@ -343,118 +283,20 @@ static struct fuse_operations gobexfuse_oper = {
 	.destroy = gobexfuse_destroy,
 };
 
-GIOChannel *channel;
-int fd;
-struct fuse_chan *ch;
-size_t bufsize;
-struct fuse_session *se;
-char *buf;
-
-gpointer chan_recv_thread(gpointer user_data)
+int main(int argc, char *argv[])
 {
-	int res = 0;
-	struct fuse_chan *tmpch = ch;
-
-	while (!fuse_session_exited(se)) {
-		res = fuse_chan_recv(&tmpch, buf, bufsize);
-		g_print("|| threaded - recv'ed \n");
-		fuse_session_process(se, buf, res, ch);
-	}
-
-	return 0;
-}
-
-gboolean my_callback(GIOChannel *source, GIOCondition condition, gpointer data)
-{
-	g_mutex_lock(busy_mutex);
-	if (busy == TRUE)
-		goto unlock;
-	busy = TRUE;
-	
-	g_print("// callback begin\n");
-	g_print("\\\\ callback end\n");
-
-	//if(!fuse_session_exited(se))
-	//	return FALSE;
-	//
-	busy = FALSE;
-unlock:
-	g_mutex_unlock(busy_mutex);
-	return TRUE;
-}
-
-int gobexfuse_session_loop()
-{
-	int res = 0;
-	GIOCondition cond;
-
-	ch = fuse_session_next_chan(se, NULL);
-	bufsize = fuse_chan_bufsize(ch);
-
-	buf = (char*)g_malloc(bufsize);
-	if (!buf) {
-		fprintf(stderr, "fuse: failed to allocate read buffer\n");
-		return -1;
-	}
-
-	/*fd = fuse_chan_fd(ch);
-	channel = g_io_channel_unix_new(fd);*/
-	main_loop = g_main_loop_new(NULL, FALSE);
-
-	session = gobexhlp_connect(options.dststr);
-	if (session == NULL || session->io == NULL)
-		g_error("Connection to %s failed\n", options.dststr);
-	
-	/*g_io_channel_set_encoding(channel, NULL, NULL);
-	g_io_channel_set_buffered(channel, TRUE);
-	cond = G_IO_IN | G_IO_HUP | G_IO_ERR | G_IO_NVAL;
-	g_io_add_watch(channel, cond, (GIOFunc)my_callback, NULL);*/
-	g_thread_create(chan_recv_thread, NULL, TRUE, NULL);
-	g_main_loop_run(main_loop);
-
-	/*g_io_channel_shutdown(channel,TRUE,NULL);*/
-	g_free(buf);
-	fuse_session_reset(se);
-	return res < 0 ? -1 : 0;
-}
-
-
-
-int main(int argc, const char *argv[])
-{
-	int err = -1;
-	char *mountpoint;
+	int retfuse;
 	struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
-	
-	g_thread_init(NULL);
-	busy = FALSE;
-	busy_mutex = g_mutex_new();
-	busy_cond = g_cond_new();
 
 	memset(&options, 0, sizeof(struct options));
 
 	if (fuse_opt_parse(&args, &options, gobexfuse_opts, NULL) == -1)
 		return -1;
+
+	fuse_opt_add_arg(&args, "-s"); /* force single threaded mode */
+	retfuse = fuse_main(args.argc, args.argv, &gobexfuse_oper, NULL);
 	
-	if (fuse_parse_cmdline(&args, &mountpoint, NULL, NULL) != -1 &&
-	    		(ch = fuse_mount(mountpoint, &args)) != NULL) {
-		struct fuse *fuse;
-
-		fuse = fuse_new(ch, &args, &gobexfuse_oper,
-				sizeof(gobexfuse_oper), NULL);
-		se = fuse_get_session(fuse);
-
-		if (se != NULL) {
-			if (fuse_set_signal_handlers(se) != -1) {
-				err = gobexfuse_session_loop();
-				fuse_remove_signal_handlers(se);
-				fuse_session_remove_chan(ch);
-			}
-			fuse_session_destroy(se);
-		}
-		fuse_unmount(mountpoint, ch);
-	}
 	fuse_opt_free_args(&args);
-
-	return 0;
+	return retfuse;
 }
+
