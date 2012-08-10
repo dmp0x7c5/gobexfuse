@@ -243,7 +243,7 @@ struct gobexhlp_data* gobexhlp_connect(const char *target)
 
 	g_print("gobexhlp_connect()\n");
 
-	session = g_try_malloc0(sizeof(*session));
+	session = g_try_malloc0(sizeof(struct gobexhlp_data));
 	if (session == NULL)
 		return NULL;
 
@@ -324,7 +324,7 @@ void gobexhlp_request_new(struct gobexhlp_data *session,
 
 	g_mutex_unlock(req_mutex);
 
-	session->request = g_malloc0(sizeof(*session->request));
+	session->request = g_malloc0(sizeof(struct gobexhlp_request));
 	session->request->name = name;
 	
 	g_print("REQUEST NEW %s\n", session->request->name);
@@ -563,13 +563,14 @@ static gboolean async_get_consumer(const void *buf, gsize len,
 	struct gobexhlp_data *session = user_data;
 	struct gobexhlp_buffer *buffer = session->buffer;
 
-	if (buffer->data == NULL)
-		buffer->data = g_malloc0(sizeof(*buffer->data) * len);
+	g_print("async_get_consumer():[%d.%d]:\n", (int)len,
+					(int)buffer->size);
+
+	if (buffer->size == 0)
+		buffer->data = g_malloc0(sizeof(char) * len);
 	else
 		buffer->data = g_realloc(buffer->data, buffer->size + len);
 
-	g_print("async_get_consumer():[%d.%d]:\n", (int)len,
-					(int)buffer->size);
 
 	memcpy(buffer->data + buffer->size, buf, len);
 	buffer->size += len;
@@ -596,7 +597,7 @@ GList *gobexhlp_listfolder(struct gobexhlp_data* session, const char *path)
 	lsreq->files = g_list_alloc();
 	g_hash_table_replace(session->listfolder_req, g_strdup(path), lsreq);
 	
-	buffer = g_malloc0(sizeof(*buffer));
+	buffer = g_malloc0(sizeof(struct gobexhlp_buffer));
 	session->buffer = buffer;
 	
 	gobexhlp_request_new(session, g_strdup_printf("listfolder %s", path));
@@ -609,6 +610,7 @@ GList *gobexhlp_listfolder(struct gobexhlp_data* session, const char *path)
 				session, NULL);
 	gobexhlp_request_wait_free(session);
 	g_free(buffer);
+	session->buffer = NULL;
 
 	return lsreq->files;
 }
@@ -747,6 +749,7 @@ void gobexhlp_put(struct gobexhlp_data* session,
 	g_free(target);
 
 	gobexhlp_request_wait_free(session);
+	session->buffer = NULL;
 }
 
 /* virtual file creation */
@@ -766,16 +769,20 @@ void gobexhlp_touch(struct gobexhlp_data* session, const char *path)
 
 void gobexhlp_touch_real(struct gobexhlp_data* session, gchar *path)
 {
-	struct gobexhlp_buffer *buffer;
+	struct gobexhlp_buffer *buffer, *tmpbuf;
 	
 	g_print("gobexhlp_touch_real(%s)\n", path);
 	
-	buffer = g_malloc0(sizeof(*buffer));
+	tmpbuf = session->buffer; /* save buffer state */
+
+	buffer = g_malloc0(sizeof(struct gobexhlp_buffer));
+	buffer->data = g_malloc0(sizeof(char));
 	session->rtouch = TRUE;
 	gobexhlp_put(session, buffer, path);
 	session->rtouch = FALSE;
 	g_free(buffer);
-	return;
+	
+	session->buffer = tmpbuf;
 }
 
 /*
