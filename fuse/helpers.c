@@ -731,11 +731,11 @@ void gobexhlp_put(struct gobexhlp_data* session,
 				session->vtouch == TRUE) {
 		session->vtouch = FALSE;
 		g_free(session->vtouch_path);
-	} //else {
-		/* do not delete existing file */
-		/*if (session->rtouch == FALSE)
-			gobexhlp_delete(session, path);*/
-	//}
+	} else {
+		/* delete existing file */
+		if (session->rtouch == FALSE)
+			gobexhlp_delete(session, path);
+	}
 
 	gobexhlp_setpath(session, npath);
 	buffer->tmpsize = 0;
