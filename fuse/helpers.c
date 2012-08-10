@@ -111,8 +111,8 @@ static uint16_t find_rfcomm_uuid(void *user_data)
 static uint16_t get_ftp_channel(const char *dststr)
 {
 	sdp_session_t *sdp;
-	sdp_list_t *response_list = NULL, *search_list, *attrid_list;
-	sdp_list_t *r;
+	sdp_list_t *r, *search_list, *attrid_list;
+	sdp_list_t *response_list = NULL;
 	uuid_t uuid;
 	bdaddr_t dst;
 
@@ -151,6 +151,10 @@ static uint16_t get_ftp_channel(const char *dststr)
 		sdp_record_free(rec);
 	}
 	sdp_close(sdp);
+
+	g_free(search_list);
+	g_free(attrid_list);
+	g_free(response_list);
 
 	return channel;
 }
@@ -609,6 +613,7 @@ GList *gobexhlp_listfolder(struct gobexhlp_data* session, const char *path)
 				complete_listfolder_func,
 				session, NULL);
 	gobexhlp_request_wait_free(session);
+	g_free(buffer->data);
 	g_free(buffer);
 	session->buffer = NULL;
 
@@ -776,7 +781,6 @@ void gobexhlp_touch_real(struct gobexhlp_data* session, gchar *path)
 	tmpbuf = session->buffer; /* save buffer state */
 
 	buffer = g_malloc0(sizeof(struct gobexhlp_buffer));
-	buffer->data = g_malloc0(sizeof(char));
 	session->rtouch = TRUE;
 	gobexhlp_put(session, buffer, path);
 	session->rtouch = FALSE;
