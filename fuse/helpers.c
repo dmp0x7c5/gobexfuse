@@ -479,11 +479,6 @@ static struct gobexhlp_location *get_location(const char *path)
 	directories[fid][0] = '\0'; /* remove file */
 	location->dir = g_strjoinv("/", directories);
 
-	if (location->dir[0] == '\0') {
-		g_free(location->dir);
-		location->dir = g_strdup("/");
-	}
-
 	g_strfreev(directories);
 
 	return location;
