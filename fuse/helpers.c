@@ -285,7 +285,7 @@ void gobexhlp_disconnect(struct gobexhlp_session* session)
 	g_free(session);
 }
 
-void gobexhlp_request_new(struct gobexhlp_session *session,
+void request_new(struct gobexhlp_session *session,
 					gchar *name)
 {
 	if (session->vtouch == TRUE) {
@@ -322,7 +322,7 @@ void gobexhlp_request_new(struct gobexhlp_session *session,
 	g_obex_resume(session->obex);
 }
 
-void gobexhlp_request_wait_free(struct gobexhlp_session *session)
+void request_wait_free(struct gobexhlp_session *session)
 {
 	g_print("WAIT for %s\n", session->request->name);
 	
@@ -487,11 +487,11 @@ void gobexhlp_setpath(struct gobexhlp_session *session, const char *path)
 		split = strlen(session->setpath);
 	}
 	else {
-		gobexhlp_request_new(session,
+		request_new(session,
 					g_strdup_printf("setpath root"));
 		g_obex_setpath(session->obex, NULL, response_func,
 							session, NULL);
-		gobexhlp_request_wait_free(session);
+		request_wait_free(session);
 	}
 
 	path_v = g_strsplit(path+split, "/", -1);
@@ -499,11 +499,11 @@ void gobexhlp_setpath(struct gobexhlp_session *session, const char *path)
 
 	for (i = 0; i < len; i++)
 		if (path_v[i][0] != '\0') {
-			gobexhlp_request_new(session,
+			request_new(session,
 				g_strdup_printf("setpath %s", path_v[i]));
 			g_obex_setpath(session->obex, path_v[i],
 					response_func, session, NULL);
-			gobexhlp_request_wait_free(session);
+			request_wait_free(session);
 		}
 
 	g_free(session->setpath);
@@ -556,7 +556,7 @@ GList *gobexhlp_listfolder(struct gobexhlp_session* session,
 	buffer = g_malloc0(sizeof(struct gobexhlp_buffer));
 	session->buffer = buffer;
 	
-	gobexhlp_request_new(session, g_strdup_printf("listfolder %s", path));
+	request_new(session, g_strdup_printf("listfolder %s", path));
 	req = g_obex_packet_new(G_OBEX_OP_GET, TRUE, G_OBEX_HDR_INVALID);
 	g_obex_packet_add_bytes(req, G_OBEX_HDR_TYPE, OBEX_FTP_LS,
 						strlen(OBEX_FTP_LS) + 1);
@@ -564,7 +564,7 @@ GList *gobexhlp_listfolder(struct gobexhlp_session* session,
 				async_get_consumer,
 				complete_listfolder_func,
 				session, NULL);
-	gobexhlp_request_wait_free(session);
+	request_wait_free(session);
 	g_free(buffer->data);
 	g_free(buffer);
 
@@ -591,7 +591,7 @@ void gobexhlp_mkdir(struct gobexhlp_session* session, const char *path)
 	l = get_location(path);
 	gobexhlp_setpath(session, l->dir);
 	
-	gobexhlp_request_new(session, g_strdup_printf("mkdir %s", path));
+	request_new(session, g_strdup_printf("mkdir %s", path));
 	/* g_obex_mkdir also sets path, to new folder */
 	g_obex_mkdir(session->obex, l->file, response_func, session, NULL);
 	g_free(session->setpath);
@@ -602,8 +602,8 @@ void gobexhlp_mkdir(struct gobexhlp_session* session, const char *path)
 	stbuf->st_mtime = time(NULL);
 	g_hash_table_replace(session->file_stat, g_strdup(path), stbuf);
 
-	gobexhlp_request_wait_free(session);
 	free_location(l);
+	request_wait_free(session);
 }
 
 struct gobexhlp_buffer *gobexhlp_get(struct gobexhlp_session* session,
@@ -626,14 +626,14 @@ struct gobexhlp_buffer *gobexhlp_get(struct gobexhlp_session* session,
 		return buffer;
 
 	gobexhlp_setpath(session, l->dir);
-	gobexhlp_request_new(session, g_strdup_printf("get %s", path));
+	request_new(session, g_strdup_printf("get %s", path));
 	session->buffer = buffer;
 	g_obex_get_req(session->obex, async_get_consumer,
 					complete_func, session, NULL,
 					G_OBEX_HDR_NAME, l->file,
 					G_OBEX_HDR_INVALID);
-	gobexhlp_request_wait_free(session);
 	free_location(l);
+	request_wait_free(session);
 
 	return buffer;
 }
@@ -687,14 +687,13 @@ void gobexhlp_put(struct gobexhlp_session* session,
 	gobexhlp_setpath(session, l->dir);
 	buffer->tmpsize = 0;
 	session->buffer = buffer;
-	gobexhlp_request_new(session, g_strdup_printf("put %s", path));
+	request_new(session, g_strdup_printf("put %s", path));
 	g_obex_put_req(session->obex, async_put_producer,
 					complete_func, session, NULL,
 					G_OBEX_HDR_NAME, l->file,
 					G_OBEX_HDR_INVALID);
-	gobexhlp_request_wait_free(session);
-	session->buffer = NULL;
 	free_location(l);
+	request_wait_free(session);
 }
 
 /* virtual file creation */
@@ -737,13 +736,13 @@ void gobexhlp_delete(struct gobexhlp_session* session, const char *path)
 	g_print("gobexhlp_delete(%s)\n", l->file);
 
 	gobexhlp_setpath(session, l->dir);
-	gobexhlp_request_new(session, g_strdup_printf("delete %s", path));
+	request_new(session, g_strdup_printf("delete %s", path));
 	g_obex_delete(session->obex, l->file, response_func, session, NULL);
 
 	g_hash_table_remove(session->file_stat, path);
 
-	gobexhlp_request_wait_free(session);
 	free_location(l);
+	request_wait_free(session);
 }
 
 /*
@@ -761,12 +760,12 @@ void gobexhlp_move(struct gobexhlp_session* session, const char *oldpath,
 
 	g_print("gobexhlp_move(%s to %s)\n", l_from->file, l_to->file);
 
-	gobexhlp_request_new(session, g_strdup_printf("move %s:%s",
+	request_new(session, g_strdup_printf("move %s:%s",
 					oldpath, newpath));
 	g_obex_move(session->obex, l_from->file, l_to->file, response_func,
 					session, NULL);
 	free_location(l_to);
 	free_location(l_from);
-	gobexhlp_request_wait_free(session);
+	request_wait_free(session);
 }
 
