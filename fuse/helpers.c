@@ -53,7 +53,7 @@ struct gobexhlp_buffer {
 	gboolean edited;
 };
 
-struct gobexhlp_data {
+struct gobexhlp_session {
 	GObex *obex;
 	GList *lsfiles;
 	GIOChannel *io;
@@ -71,14 +71,14 @@ struct gobexhlp_location {
 	gchar *file;
 };
 
-struct gobexhlp_data* gobexhlp_connect(const char *target);
-void gobexhlp_disconnect(struct gobexhlp_data* session);
-void gobexhlp_setpath(struct gobexhlp_data* session, const char *path);
-GList *gobexhlp_listfolder(struct gobexhlp_data* session, const char *path);
-struct stat *gobexhlp_getattr(struct gobexhlp_data* session,
+struct gobexhlp_session* gobexhlp_connect(const char *target);
+void gobexhlp_disconnect(struct gobexhlp_session* session);
+void gobexhlp_setpath(struct gobexhlp_session* session, const char *path);
+GList *gobexhlp_listfolder(struct gobexhlp_session* session, const char *path);
+struct stat *gobexhlp_getattr(struct gobexhlp_session* session,
 				const char *path);
-void gobexhlp_delete(struct gobexhlp_data* session, const char *path);
-void gobexhlp_touch_real(struct gobexhlp_data* session, gchar *path);
+void gobexhlp_delete(struct gobexhlp_session* session, const char *path);
+void gobexhlp_touch_real(struct gobexhlp_session* session, gchar *path);
 
 static uint16_t find_rfcomm_uuid(void *user_data)
 {
@@ -196,7 +196,7 @@ static void obex_callback(GObex *obex, GError *err, GObexPacket *rsp,
 
 static void bt_io_callback(GIOChannel *io, GError *err, gpointer user_data)
 {
-	struct gobexhlp_data *session = user_data;
+	struct gobexhlp_session *session = user_data;
 	GObexTransportType type;
 	int tx_mtu = -1;
 	int rx_mtu = -1;
@@ -225,15 +225,15 @@ static void bt_io_callback(GIOChannel *io, GError *err, gpointer user_data)
 				OBEX_FTP_UUID_LEN, G_OBEX_HDR_INVALID);
 }
 
-struct gobexhlp_data* gobexhlp_connect(const char *target)
+struct gobexhlp_session* gobexhlp_connect(const char *target)
 {
 	GError *err = NULL;
-	struct gobexhlp_data *session;
+	struct gobexhlp_session *session;
 	uint16_t channel;
 
 	g_print("gobexhlp_connect()\n");
 
-	session = g_try_malloc0(sizeof(struct gobexhlp_data));
+	session = g_try_malloc0(sizeof(struct gobexhlp_session));
 	if (session == NULL)
 		return NULL;
 
@@ -263,7 +263,7 @@ struct gobexhlp_data* gobexhlp_connect(const char *target)
 	return session;
 }
 
-void gobexhlp_disconnect(struct gobexhlp_data* session)
+void gobexhlp_disconnect(struct gobexhlp_session* session)
 {
 	g_print("gobexhlp_disconnect()\n");
 
@@ -285,7 +285,7 @@ void gobexhlp_disconnect(struct gobexhlp_data* session)
 	g_free(session);
 }
 
-void gobexhlp_request_new(struct gobexhlp_data *session,
+void gobexhlp_request_new(struct gobexhlp_session *session,
 					gchar *name)
 {
 	if (session->vtouch == TRUE) {
@@ -322,7 +322,7 @@ void gobexhlp_request_new(struct gobexhlp_data *session,
 	g_obex_resume(session->obex);
 }
 
-void gobexhlp_request_wait_free(struct gobexhlp_data *session)
+void gobexhlp_request_wait_free(struct gobexhlp_session *session)
 {
 	g_print("WAIT for %s\n", session->request->name);
 	
@@ -347,7 +347,7 @@ void gobexhlp_request_wait_free(struct gobexhlp_data *session)
 static void complete_func(GObex *obex, GError *err,
 				gpointer user_data)
 {
-	struct gobexhlp_data *session = user_data;
+	struct gobexhlp_session *session = user_data;
 	
 	g_mutex_lock(gobexhlp_mutex);
 	session->request->complete = TRUE;
@@ -376,7 +376,7 @@ static void listfolder_xml_element(GMarkupParseContext *ctxt,
 			GError **gerr)
 {
 	gchar *key, *pathname, *name = NULL;
-	struct gobexhlp_data *session = user_data;
+	struct gobexhlp_session *session = user_data;
 	struct stat *stbuf;
 	gint i = 0;
 
@@ -432,7 +432,7 @@ static void complete_listfolder_func(GObex *obex, GError *err,
 				gpointer user_data)
 {
 	GMarkupParseContext *ctxt;
-	struct gobexhlp_data *session = user_data;
+	struct gobexhlp_session *session = user_data;
 	struct gobexhlp_buffer *buffer = session->buffer;
 
 	if (err == NULL) {
@@ -475,7 +475,7 @@ void free_location(struct gobexhlp_location *location)
 	g_free(location);
 }
 
-void gobexhlp_setpath(struct gobexhlp_data *session, const char *path)
+void gobexhlp_setpath(struct gobexhlp_session *session, const char *path)
 {
 	guint i = 0, split = 0;
 	gchar **path_v;
@@ -515,7 +515,7 @@ void gobexhlp_setpath(struct gobexhlp_data *session, const char *path)
 static gboolean async_get_consumer(const void *buf, gsize len,
 							gpointer user_data)
 {
-	struct gobexhlp_data *session = user_data;
+	struct gobexhlp_session *session = user_data;
 	struct gobexhlp_buffer *buffer = session->buffer;
 
 	/*g_print("async_get_consumer():[%d.%d]:\n", (int)len,
@@ -536,7 +536,8 @@ static gboolean async_get_consumer(const void *buf, gsize len,
 	return TRUE;
 }
 
-GList *gobexhlp_listfolder(struct gobexhlp_data* session, const char *path)
+GList *gobexhlp_listfolder(struct gobexhlp_session* session,
+					const char *path)
 {
 	struct gobexhlp_buffer *buffer;
 	GObexPacket *req;
@@ -570,7 +571,8 @@ GList *gobexhlp_listfolder(struct gobexhlp_data* session, const char *path)
 	return session->lsfiles;
 }
 
-struct stat *gobexhlp_getattr(struct gobexhlp_data* session, const char *path)
+struct stat *gobexhlp_getattr(struct gobexhlp_session* session,
+					const char *path)
 {
 	struct stat* stbuf;
 
@@ -579,7 +581,7 @@ struct stat *gobexhlp_getattr(struct gobexhlp_data* session, const char *path)
 	return stbuf;
 }
 
-void gobexhlp_mkdir(struct gobexhlp_data* session, const char *path)
+void gobexhlp_mkdir(struct gobexhlp_session* session, const char *path)
 {
 	struct gobexhlp_location *l;
 	struct stat *stbuf;
@@ -604,7 +606,7 @@ void gobexhlp_mkdir(struct gobexhlp_data* session, const char *path)
 	free_location(l);
 }
 
-struct gobexhlp_buffer *gobexhlp_get(struct gobexhlp_data* session,
+struct gobexhlp_buffer *gobexhlp_get(struct gobexhlp_session* session,
 						const char *path)
 {
 	struct gobexhlp_location *l;
@@ -639,7 +641,7 @@ struct gobexhlp_buffer *gobexhlp_get(struct gobexhlp_data* session,
 static gssize async_put_producer(void *buf, gsize len, gpointer user_data)
 {
 	gssize size;
-	struct gobexhlp_data *session = user_data;
+	struct gobexhlp_session *session = user_data;
 	struct gobexhlp_buffer *buffer = session->buffer;
 
 	size = buffer->size - buffer->tmpsize;
@@ -663,7 +665,7 @@ static gssize async_put_producer(void *buf, gsize len, gpointer user_data)
 	return size;
 }
 
-void gobexhlp_put(struct gobexhlp_data* session,
+void gobexhlp_put(struct gobexhlp_session* session,
 				struct gobexhlp_buffer *buffer,
 				const char *path)
 {
@@ -696,7 +698,7 @@ void gobexhlp_put(struct gobexhlp_data* session,
 }
 
 /* virtual file creation */
-void gobexhlp_touch(struct gobexhlp_data* session, const char *path)
+void gobexhlp_touch(struct gobexhlp_session* session, const char *path)
 {
 	struct stat *stbuf;
 	
@@ -710,7 +712,7 @@ void gobexhlp_touch(struct gobexhlp_data* session, const char *path)
 	session->vtouch_path = g_strdup(path);
 }
 
-void gobexhlp_touch_real(struct gobexhlp_data* session, gchar *path)
+void gobexhlp_touch_real(struct gobexhlp_session* session, gchar *path)
 {
 	struct gobexhlp_buffer *buffer, *tmpbuf;
 	
@@ -727,7 +729,7 @@ void gobexhlp_touch_real(struct gobexhlp_data* session, gchar *path)
 	session->buffer = tmpbuf;
 }
 
-void gobexhlp_delete(struct gobexhlp_data* session, const char *path)
+void gobexhlp_delete(struct gobexhlp_session* session, const char *path)
 {
 	struct gobexhlp_location *l;
 	l = get_location(path);
@@ -748,8 +750,8 @@ void gobexhlp_delete(struct gobexhlp_data* session, const char *path)
  * After rename or copy, HTC doesn't send any response,
  * SE does nothing.
  */
-void gobexhlp_move(struct gobexhlp_data* session, const char *oldpath,
-		const char* newpath)
+void gobexhlp_move(struct gobexhlp_session* session, const char *oldpath,
+						const char* newpath)
 {
 	struct gobexhlp_location *l_from, *l_to;
 

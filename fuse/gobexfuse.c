@@ -32,7 +32,7 @@
 
 #include "helpers.c"
 
-struct gobexhlp_data* session = NULL;
+struct gobexhlp_session* session = NULL;
 static GMainLoop *main_loop;
 static GThread *main_gthread;
 
