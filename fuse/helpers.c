@@ -491,58 +491,46 @@ static struct gobexhlp_location *get_location(const char *path)
 
 void free_location(struct gobexhlp_location *location)
 {
-	g_free(location->dir);
 	g_free(location->file);
+	g_free(location->dir);
 	g_free(location);
 }
 
-/* TODO: paths equality/compare should be simplified */
-void gobexhlp_setpath(struct gobexhlp_data* session, const char *path)
+void gobexhlp_setpath(struct gobexhlp_data *session, const char *path)
 {
-	guint len, i;
-	gchar **directories, *withslash, *withslash2;
-	const char *setpath;
+	guint i = 0, split = 0;
+	gchar **path_v;
+	gsize len;
 
 	g_print("gobexhlp_setpath(%s)\n", path);
-
-	withslash = g_strdup_printf("%s/", path);
-	withslash2 = g_strdup_printf("%s/", session->setpath);
-
-	if (g_strcmp0(session->setpath, path) == 0 ||
-		g_strcmp0(session->setpath, withslash) == 0 ||
-		g_strcmp0(withslash2, path) == 0) {
-		g_print("setpath: already here\n");
-		g_free(withslash);
-		g_free(withslash2);
-		return;
+	
+	if (g_str_has_prefix(path, session->setpath)) {
+		split = strlen(session->setpath);
 	}
-	g_free(withslash);
-	g_free(withslash2);
+	else {
+		gobexhlp_request_new(session,
+					g_strdup_printf("setpath root"));
+		g_obex_setpath(session->obex, NULL, response_func,
+							session, NULL);
+		gobexhlp_request_wait_free(session);
+	}
 
-	gobexhlp_request_new(session, g_strdup_printf("setpath root"));
-	g_obex_setpath(session->obex, NULL, response_func, session, NULL);
-	gobexhlp_request_wait_free(session);
+	path_v = g_strsplit(path+split, "/", -1);
+	len = g_strv_length(path_v);
 
-	setpath = path + 1; /* to pass first '/' character */
-
-	directories = g_strsplit(setpath, "/", -1);
-	len = g_strv_length(directories);
-
-	for (i = 0; i < len; i++) {
-		if (directories[i][0] != '\0') { /* to protect multi / */
+	for (i = 0; i < len; i++)
+		if (path_v[i][0] != '\0') {
 			gobexhlp_request_new(session,
-					g_strdup_printf("setpath %s",
-						directories[i]));
-			g_obex_setpath(session->obex, directories[i],
-						response_func, session, NULL);
+				g_strdup_printf("setpath %s", path_v[i]));
+			g_obex_setpath(session->obex, path_v[i],
+					response_func, session, NULL);
 			gobexhlp_request_wait_free(session);
 		}
-	}
 
 	g_free(session->setpath);
 	session->setpath = g_strdup(path);
 
-	g_strfreev(directories);
+	g_strfreev(path_v);
 }
 
 static gboolean async_get_consumer(const void *buf, gsize len,
@@ -551,8 +539,8 @@ static gboolean async_get_consumer(const void *buf, gsize len,
 	struct gobexhlp_data *session = user_data;
 	struct gobexhlp_buffer *buffer = session->buffer;
 
-	g_print("async_get_consumer():[%d.%d]:\n", (int)len,
-					(int)buffer->size);
+	/*g_print("async_get_consumer():[%d.%d]:\n", (int)len,
+					(int)buffer->size);*/
 
 	if (buffer->size == 0)
 		buffer->data = g_malloc0(sizeof(char) * len);
@@ -645,7 +633,7 @@ struct gobexhlp_buffer *gobexhlp_get(struct gobexhlp_data* session,
 	struct stat *stfile;
 	l = get_location(path);
 
-	g_print("gobexhlp_get(%s)\n", path);
+	g_print("gobexhlp_get(%s%s)\n", l->dir, l->file);
 
 	stfile = gobexhlp_getattr(session, path);
 	if (stfile == NULL)
@@ -680,9 +668,9 @@ static gssize async_put_producer(void *buf, gsize len, gpointer user_data)
 	if (size > len)
 		size = len;
 
-	g_print("async_put_producer():[%d.%d.%d.%d]:\n", (int)len,
+	/*g_print("async_put_producer():[%d.%d.%d.%d]:\n", (int)len,
 				(int)buffer->tmpsize, (int)buffer->size,
-				(int)size);
+				(int)size);*/
 
 	g_obex_suspend(session->obex);
 	g_obex_resume(session->obex);
