@@ -54,7 +54,6 @@ struct gobexhlp_buffer {
 };
 
 struct gobexhlp_data {
-	const char *target;
 	uint16_t channel;
 	GIOChannel *io;
 	GObex *obex;
@@ -72,6 +71,11 @@ struct gobexhlp_data {
 
 struct gobexhlp_listfolder_req {
 	GList *files;
+};
+
+struct gobexhlp_location {
+	gchar *dir;
+	gchar *file;
 };
 
 struct gobexhlp_data* gobexhlp_connect(const char *target);
@@ -199,7 +203,6 @@ static void obex_callback(GObex *obex, GError *err, GObexPacket *rsp,
 
 static void bt_io_callback(GIOChannel *io, GError *err, gpointer user_data)
 {
-	GObex *obex;
 	struct gobexhlp_data *session = user_data;
 	GObexTransportType type;
 	int tx_mtu = -1;
@@ -212,8 +215,8 @@ static void bt_io_callback(GIOChannel *io, GError *err, gpointer user_data)
 
 	g_print("Bluetooth socket connected\n");
 
-	g_io_channel_set_flags(session->io, G_IO_FLAG_NONBLOCK, NULL);
-	g_io_channel_set_close_on_unref(session->io, TRUE);
+	//g_io_channel_set_flags(session->io, G_IO_FLAG_NONBLOCK, NULL);
+	//g_io_channel_set_close_on_unref(session->io, TRUE);
 
 	if (get_packet_opt(session->io, &tx_mtu, &rx_mtu) == 0) {
 		type = G_OBEX_TRANSPORT_PACKET;
@@ -223,14 +226,11 @@ static void bt_io_callback(GIOChannel *io, GError *err, gpointer user_data)
 		g_print("STREAM transport\n");
 	}
 
-	obex = g_obex_new(io, type, tx_mtu, rx_mtu);
-	session->obex = g_obex_ref(obex);
-
+	session->obex = g_obex_new(io, type, tx_mtu, rx_mtu);
 	g_obex_connect(session->obex, obex_callback, session, NULL,
 				G_OBEX_HDR_TARGET, OBEX_FTP_UUID,
 				OBEX_FTP_UUID_LEN, G_OBEX_HDR_INVALID);
 }
-
 
 static void free_listfolder_req(gpointer data)
 {
@@ -238,7 +238,6 @@ static void free_listfolder_req(gpointer data)
 	g_list_free_full(req->files, g_free);
 	g_free(req);
 }
-
 
 struct gobexhlp_data* gobexhlp_connect(const char *target)
 {
@@ -251,7 +250,6 @@ struct gobexhlp_data* gobexhlp_connect(const char *target)
 	if (session == NULL)
 		return NULL;
 
-	session->target = target;
 	session->channel = get_ftp_channel(target);
 
 	g_print("CHANNEL: %d\n", session->channel);
@@ -287,9 +285,8 @@ void gobexhlp_disconnect(struct gobexhlp_data* session)
 	if (session == NULL)
 		return;
 
-	g_io_channel_shutdown(session->io, TRUE, NULL);
-	g_io_channel_unref(session->io);
 	g_obex_unref(session->obex);
+	g_free(session->io);
 
 	g_hash_table_remove_all(session->file_stat);
 	g_hash_table_remove_all(session->listfolder_req);
@@ -320,8 +317,7 @@ void gobexhlp_request_new(struct gobexhlp_data *session,
 		 * single threaded mode (-s option)
 		 */
 		g_print("Another request (%s) active!\n",
-				session->request->name);
-		// wait till the current request ends
+					session->request->name);
 		while (session->request != NULL)
 			g_cond_wait(req_cond, req_mutex);
 	}
@@ -459,50 +455,47 @@ static void complete_listfolder_func(GObex *obex, GError *err,
 
 	if (err == NULL) {
 		ctxt = g_markup_parse_context_new(&parser, 0, session, NULL);
-		g_markup_parse_context_parse(ctxt, buffer->data, buffer->size, NULL);
+		g_markup_parse_context_parse(ctxt, buffer->data, buffer->size,
+							NULL);
 		g_markup_parse_context_free(ctxt);
 	}
 
 	complete_func(obex, err, user_data);
 }
 
-#define PATH_GET_FILE 1
-#define PATH_GET_DIRS 2
-
-static gchar *path_get_element(const char *path, uint option)
+static struct gobexhlp_location *get_location(const char *path)
 {
-	guint len, i;
-	gchar *tmpstr = NULL, *retstr = NULL;
+	struct gobexhlp_location *location;
 	gchar **directories;
+	guint i, len, fid = 0;
 
+	location = g_malloc0(sizeof(struct gobexhlp_location));
 	directories = g_strsplit(path, "/", -1);
 	len = g_strv_length(directories);
 
 	for (i = 0; i < len; i++)
-		if (directories[i][0] != '\0') { /* protect multi slashes */
-			tmpstr = directories[i]; /* last set is a file */
-		}
+		if (directories[i][0] != '\0') /* protect multi slashes */
+			fid = i; /* last nonempty is a file */
 
-	if (option == PATH_GET_FILE)
-		retstr = g_strdup(tmpstr);
+	location->file = g_strdup(directories[fid]);
+	directories[fid][0] = '\0'; /* remove file */
+	location->dir = g_strjoinv("/", directories);
 
-	else if (option == PATH_GET_DIRS) {
-		for (i = len - 1; i >= 0; i--) {
-			if (directories[i] == tmpstr) {
-				directories[i][0] = '\0'; /* remove file */
-				break;
-			}
-		}
-		retstr = g_strjoinv("/", directories);
-		if (retstr[0] == '\0') {
-			g_free(retstr);
-			retstr = g_strdup("/");
-		}
+	if (location->dir[0] == '\0') {
+		g_free(location->dir);
+		location->dir = g_strdup("/");
 	}
 
 	g_strfreev(directories);
 
-	return retstr;
+	return location;
+}
+
+void free_location(struct gobexhlp_location *location)
+{
+	g_free(location->dir);
+	g_free(location->file);
+	g_free(location);
 }
 
 /* TODO: paths equality/compare should be simplified */
@@ -631,19 +624,17 @@ struct stat *gobexhlp_getattr(struct gobexhlp_data* session, const char *path)
 
 void gobexhlp_mkdir(struct gobexhlp_data* session, const char *path)
 {
+	struct gobexhlp_location *l;
 	struct stat *stbuf;
-	gchar *npath, *target;
-
-	npath = path_get_element(path, PATH_GET_DIRS);
-	target = path_get_element(path, PATH_GET_FILE);
-
+	
 	g_print("gobexhlp_mkdir(%s)\n", path);
 
-	gobexhlp_setpath(session, npath);
+	l = get_location(path);
+	gobexhlp_setpath(session, l->dir);
 	
 	gobexhlp_request_new(session, g_strdup_printf("mkdir %s", path));
 	/* g_obex_mkdir also sets path, to new folder */
-	g_obex_mkdir(session->obex, target, response_func, session, NULL);
+	g_obex_mkdir(session->obex, l->file, response_func, session, NULL);
 	g_free(session->setpath);
 	session->setpath = g_strdup(path);
 	session->pathdepth++;
@@ -654,17 +645,16 @@ void gobexhlp_mkdir(struct gobexhlp_data* session, const char *path)
 	g_hash_table_replace(session->file_stat, g_strdup(path), stbuf);
 
 	gobexhlp_request_wait_free(session);
-
-	g_free(npath);
-	g_free(target);
+	free_location(l);
 }
 
 struct gobexhlp_buffer *gobexhlp_get(struct gobexhlp_data* session,
 						const char *path)
 {
-	gchar *npath, *target;
+	struct gobexhlp_location *l;
 	struct gobexhlp_buffer *buffer;
 	struct stat *stfile;
+	l = get_location(path);
 
 	g_print("gobexhlp_get(%s)\n", path);
 
@@ -677,21 +667,16 @@ struct gobexhlp_buffer *gobexhlp_get(struct gobexhlp_data* session,
 	if (stfile->st_size == 0)
 		return buffer;
 
-	npath = path_get_element(path, PATH_GET_DIRS);
-	target = path_get_element(path, PATH_GET_FILE);
-	gobexhlp_setpath(session, npath);
-
+	gobexhlp_setpath(session, l->dir);
 	gobexhlp_request_new(session, g_strdup_printf("get %s", path));
 	session->buffer = buffer;
 	g_obex_get_req(session->obex, async_get_consumer,
 					complete_func, session, NULL,
-					G_OBEX_HDR_NAME, target,
+					G_OBEX_HDR_NAME, l->file,
 					G_OBEX_HDR_INVALID);
 	gobexhlp_request_wait_free(session);
+	free_location(l);
 
-	g_free(npath);
-	g_free(target);
-	
 	return buffer;
 }
 
@@ -726,11 +711,10 @@ void gobexhlp_put(struct gobexhlp_data* session,
 				struct gobexhlp_buffer *buffer,
 				const char *path)
 {
-	gchar *npath, *target;
+	struct gobexhlp_location *l;
+	l = get_location(path);
 
-	npath = path_get_element(path, PATH_GET_DIRS);
-	target = path_get_element(path, PATH_GET_FILE);
-	g_print("gobexhlp_put(%s%s)\n", npath, target);
+	g_print("gobexhlp_put(%s%s)\n", l->dir, l->file);
 
 	if (g_strcmp0(path, session->vtouch_path) == 0 &&
 				session->vtouch == TRUE) {
@@ -742,19 +726,17 @@ void gobexhlp_put(struct gobexhlp_data* session,
 			gobexhlp_delete(session, path);
 	}
 
-	gobexhlp_setpath(session, npath);
+	gobexhlp_setpath(session, l->dir);
 	buffer->tmpsize = 0;
 	session->buffer = buffer;
 	gobexhlp_request_new(session, g_strdup_printf("put %s", path));
 	g_obex_put_req(session->obex, async_put_producer,
 					complete_func, session, NULL,
-					G_OBEX_HDR_NAME, target,
+					G_OBEX_HDR_NAME, l->file,
 					G_OBEX_HDR_INVALID);
-	g_free(npath);
-	g_free(target);
-
 	gobexhlp_request_wait_free(session);
 	session->buffer = NULL;
+	free_location(l);
 }
 
 /* virtual file creation */
@@ -789,6 +771,23 @@ void gobexhlp_touch_real(struct gobexhlp_data* session, gchar *path)
 	session->buffer = tmpbuf;
 }
 
+void gobexhlp_delete(struct gobexhlp_data* session, const char *path)
+{
+	struct gobexhlp_location *l;
+	l = get_location(path);
+	
+	g_print("gobexhlp_delete(%s)\n", l->file);
+
+	gobexhlp_setpath(session, l->dir);
+	gobexhlp_request_new(session, g_strdup_printf("delete %s", path));
+	g_obex_delete(session->obex, l->file, response_func, session, NULL);
+
+	g_hash_table_remove(session->file_stat, path);
+
+	gobexhlp_request_wait_free(session);
+	free_location(l);
+}
+
 /*
  * After rename or copy, HTC doesn't send any response,
  * SE does nothing.
@@ -796,46 +795,20 @@ void gobexhlp_touch_real(struct gobexhlp_data* session, gchar *path)
 void gobexhlp_move(struct gobexhlp_data* session, const char *oldpath,
 		const char* newpath)
 {
-	gchar *npath, *target, *newtarget;
+	struct gobexhlp_location *l_from, *l_to;
 
-	npath = path_get_element(oldpath, PATH_GET_DIRS);
-	target = path_get_element(oldpath, PATH_GET_FILE);
-	newtarget = path_get_element(newpath, PATH_GET_FILE);
+	l_to = get_location(newpath);
+	l_from = get_location(oldpath);
+	gobexhlp_setpath(session, l_from->dir);
 
-	gobexhlp_setpath(session, npath);
-
-	g_print("gobexhlp_move(%s to %s)\n", target, newtarget);
+	g_print("gobexhlp_move(%s to %s)\n", l_from->file, l_to->file);
 
 	gobexhlp_request_new(session, g_strdup_printf("move %s:%s",
-				oldpath, newpath));
-	g_obex_move(session->obex, target, newtarget, response_func,
+					oldpath, newpath));
+	g_obex_move(session->obex, l_from->file, l_to->file, response_func,
 					session, NULL);
-
-	g_free(npath);
-	g_free(target);
-	g_free(newtarget);
-	
-	gobexhlp_request_wait_free(session);
-}
-
-void gobexhlp_delete(struct gobexhlp_data* session, const char *path)
-{
-	gchar *npath, *target;
-
-	npath = path_get_element(path, PATH_GET_DIRS);
-	target = path_get_element(path, PATH_GET_FILE);
-
-	gobexhlp_setpath(session, npath);
-
-	g_print("gobexhlp_delete(%s)\n", target);
-
-	gobexhlp_request_new(session, g_strdup_printf("delete %s", path));
-	g_obex_delete(session->obex, target, response_func, session, NULL);
-
-	g_hash_table_remove(session->file_stat, path);
-	g_free(npath);
-	g_free(target);
-
+	free_location(l_to);
+	free_location(l_from);
 	gobexhlp_request_wait_free(session);
 }
 
