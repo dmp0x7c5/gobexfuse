@@ -38,8 +38,8 @@
 
 #define OBEX_FTP_LS "x-obex/folder-listing"
 
-static GCond *gobexhlp_cond, *req_cond;
-static GMutex *gobexhlp_mutex, *req_mutex;
+static GCond *gobexhlp_cond;
+static GMutex *gobexhlp_mutex;
 
 struct gobexhlp_request {
 	gchar *name;
@@ -257,8 +257,6 @@ struct gobexhlp_session* gobexhlp_connect(const char *target)
 	
 	gobexhlp_mutex = g_mutex_new();
 	gobexhlp_cond = g_cond_new();
-	req_cond = g_cond_new();
-	req_mutex = g_mutex_new(); 
 
 	return session;
 }
@@ -279,8 +277,6 @@ void gobexhlp_disconnect(struct gobexhlp_session* session)
 
 	g_mutex_free(gobexhlp_mutex);
 	g_cond_free(gobexhlp_cond);
-	g_mutex_free(req_mutex);
-	g_cond_free(req_cond);
 	
 	g_free(session);
 }
@@ -294,20 +290,10 @@ void request_new(struct gobexhlp_session *session,
 		g_free(session->vtouch_path);
 	}
 
-	g_mutex_lock(req_mutex);
 	
-	if (session->request != NULL) {
-		/*
-		 * This check in unnecessary in fuse 
-		 * single threaded mode (-s option)
-		 */
-		g_print("Another request (%s) active!\n",
+	if (session->request != NULL)
+		g_error("Another request (%s) active!\n",
 					session->request->name);
-		while (session->request != NULL)
-			g_cond_wait(req_cond, req_mutex);
-	}
-
-	g_mutex_unlock(req_mutex);
 
 	session->request = g_malloc0(sizeof(struct gobexhlp_request));
 	session->request->name = name;
@@ -336,12 +322,9 @@ void request_wait_free(struct gobexhlp_session *session)
 
 	g_mutex_unlock(gobexhlp_mutex);
 	
-	g_mutex_lock(req_mutex);
 	g_free(session->request->name);
 	g_free(session->request);
 	session->request = NULL;
-	g_cond_signal(req_cond);
-	g_mutex_unlock(req_mutex);
 }
 
 static void complete_func(GObex *obex, GError *err,
@@ -427,7 +410,7 @@ static const GMarkupParser parser = {
 	NULL, NULL, NULL, NULL
 };
 
-/* '&' character breaks parse operation, should be escaped by client */
+/* '&' character breaks parse operation, should be escaped by obexd server */
 static void complete_listfolder_func(GObex *obex, GError *err,
 				gpointer user_data)
 {
