@@ -489,7 +489,7 @@ void gobexhlp_setpath(struct gobexhlp_session *session, const char *path)
 	else {
 		request_new(session,
 					g_strdup_printf("setpath root"));
-		g_obex_setpath(session->obex, NULL, response_func,
+		g_obex_setpath(session->obex, "", response_func,
 							session, NULL);
 		request_wait_free(session);
 	}
