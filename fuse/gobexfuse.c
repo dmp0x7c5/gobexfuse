@@ -62,10 +62,6 @@ static struct fuse_opt gobexfuse_opts[] =
 
 gpointer main_loop_func(gpointer user_data)
 {
-	session = gobexhlp_connect(options.dststr);
-	if (session == NULL || session->io == NULL)
-		g_error("Connection to %s failed\n", options.dststr);
-	
 	main_loop = g_main_loop_new(NULL, FALSE);
 	g_main_loop_run(main_loop);
 
@@ -80,12 +76,6 @@ gpointer main_loop_func(gpointer user_data)
 
 void* gobexfuse_init(struct fuse_conn_info *conn)
 {
-	g_thread_init(NULL);
-
-	if (options.dststr == NULL)
-		g_error("Target not specified");
-
-	main_gthread = g_thread_create(main_loop_func, NULL, TRUE, NULL);
 	conn->async_read = 0;
 	conn->want &= ~FUSE_CAP_ASYNC_READ;
 	
@@ -136,7 +126,7 @@ static int gobexfuse_mkdir(const char *path, mode_t mode)
 {
 	gobexhlp_mkdir(session, path);
 
-	return 0;
+	return session->status;
 }
 
 static int gobexfuse_readdir(const char *path, void *buf,
@@ -159,7 +149,7 @@ static int gobexfuse_readdir(const char *path, void *buf,
 	}
 
 
-	return 0;
+	return session->status;
 }
 
 static int gobexfuse_open(const char *path, struct fuse_file_info *fi)
@@ -174,7 +164,7 @@ static int gobexfuse_open(const char *path, struct fuse_file_info *fi)
 	
 	fi->fh = (uint64_t)file_buffer;
 
-	return 0;
+	return session->status;
 }
 
 static int gobexfuse_read(const char *path, char *buf, size_t size,
@@ -233,7 +223,7 @@ static int gobexfuse_release(const char *path, struct fuse_file_info *fi)
 	g_free(file_buffer->data);
 	g_free(file_buffer);
 
-	return 0;
+	return session->status;
 }
 
 static int gobexfuse_utimens(const char *path, const struct timespec tv[2])
@@ -255,14 +245,14 @@ static int gobexfuse_rename(const char *from, const char *to)
 {
 	gobexhlp_move(session, from, to);
 
-	return 0;
+	return session->status;
 }
 
 static int gobexfuse_unlink(const char *path)
 {
 	gobexhlp_delete(session, path);
 
-	return 0;
+	return session->status;
 }
 
 static struct fuse_operations gobexfuse_oper = {
@@ -291,7 +281,22 @@ int main(int argc, char *argv[])
 	memset(&options, 0, sizeof(struct options));
 
 	if (fuse_opt_parse(&args, &options, gobexfuse_opts, NULL) == -1)
-		return -1;
+		return -EINVAL;
+
+	if (options.dststr == NULL) {
+		g_print("Target not specified");
+		return -EINVAL;
+	}
+
+	g_thread_init(NULL);
+	main_gthread = g_thread_create(main_loop_func, NULL, TRUE, NULL);
+
+	session = gobexhlp_connect(options.dststr);
+	if (session == NULL || session->io == NULL) {
+		g_print("Connection to %s failed\n", options.dststr);
+		gobexhlp_disconnect(session);
+		return -EHOSTDOWN;
+	}
 
 	fuse_opt_add_arg(&args, "-s"); /* force single threaded mode */
 	retfuse = fuse_main(args.argc, args.argv, &gobexfuse_oper, NULL);

@@ -64,6 +64,7 @@ struct gobexhlp_session {
 	gboolean vtouch;
 	gchar *vtouch_path;
 	gboolean rtouch;
+	int status;
 };
 
 struct gobexhlp_location {
@@ -188,10 +189,13 @@ static int get_packet_opt(GIOChannel *io, int *tx_mtu, int *rx_mtu)
 static void obex_callback(GObex *obex, GError *err, GObexPacket *rsp,
 							gpointer user_data)
 {
-	if (err != NULL)
+	if (err != NULL) {
 		g_print("Connect failed: %s\n", err->message);
-	else
+		g_error_free(err);
+	}
+	else {
 		g_print("Connect succeeded\n");
+	}
 }
 
 static void bt_io_callback(GIOChannel *io, GError *err, gpointer user_data)
@@ -203,6 +207,7 @@ static void bt_io_callback(GIOChannel *io, GError *err, gpointer user_data)
 
 	if (err != NULL) {
 		g_printerr("%s\n", err->message);
+		g_error_free(err);
 		return;
 	}
 
@@ -339,8 +344,11 @@ static void complete_func(GObex *obex, GError *err,
 	if (err != NULL) {
 		g_print("ERROR: %s\n", err->message);
 		//gobexhlp_disconnect(session);
+		session->status = -ECANCELED;
+		g_error_free(err);
 	} else {
 		g_print("COMPLETE %s\n", session->request->name);
+		session->status = 0;
 	}
 
 	g_mutex_unlock(gobexhlp_mutex);
