@@ -30,7 +30,7 @@
 #include <fuse.h>
 #include <fuse/fuse_opt.h>
 
-#include "helpers.c"
+#include "helpers.h"
 
 struct gobexhlp_session* session = NULL;
 static GMainLoop *main_loop;

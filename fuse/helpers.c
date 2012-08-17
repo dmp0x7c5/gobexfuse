@@ -25,12 +25,15 @@
 
 #include <glib.h>
 #include <fcntl.h>
+#include <errno.h>
 
 /* includes for get_ftp_channel() */
 #include <bluetooth/bluetooth.h>
 #include <bluetooth/rfcomm.h>
 #include <bluetooth/sdp.h>
 #include <bluetooth/sdp_lib.h>
+
+#include "helpers.h"
 
 #define OBEX_FTP_UUID \
 	"\xF9\xEC\x7B\xC4\x95\x3C\x11\xD2\x98\x4E\x52\x54\x00\xDC\x9E\x09"
@@ -46,40 +49,12 @@ struct gobexhlp_request {
 	gboolean complete;
 };
 
-struct gobexhlp_buffer {
-	void *data;
-	gsize tmpsize;
-	gsize size;
-	gboolean edited;
-};
-
-struct gobexhlp_session {
-	GObex *obex;
-	GList *lsfiles;
-	GIOChannel *io;
-	GHashTable *file_stat;
-	gchar *setpath;
-	struct gobexhlp_request *request;
-	struct gobexhlp_buffer *buffer;
-	gboolean vtouch;
-	gchar *vtouch_path;
-	gboolean rtouch;
-	int status;
-	GError *err;
-};
-
 struct gobexhlp_location {
 	gchar *dir;
 	gchar *file;
 };
 
-struct gobexhlp_session* gobexhlp_connect(const char *target);
-void gobexhlp_disconnect(struct gobexhlp_session* session);
 void gobexhlp_setpath(struct gobexhlp_session* session, const char *path);
-GList *gobexhlp_listfolder(struct gobexhlp_session* session, const char *path);
-struct stat *gobexhlp_getattr(struct gobexhlp_session* session,
-				const char *path);
-void gobexhlp_delete(struct gobexhlp_session* session, const char *path);
 void gobexhlp_touch_real(struct gobexhlp_session* session, gchar *path);
 
 static uint16_t find_rfcomm_uuid(void *user_data)

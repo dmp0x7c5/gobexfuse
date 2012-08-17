@@ -135,7 +135,7 @@ if FUSE
 noinst_PROGRAMS += fuse/gobexfuse
 
 fuse_gobexfuse_SOURCES = $(gobex_sources) $(btio_sources) \
-		fuse/gobexfuse.c
+		fuse/helpers.c fuse/gobexfuse.c
 
 fuse_gobexfuse_LDADD = @GLIB_LIBS@ @GTHREAD_LIBS@ @BLUEZ_LIBS@ @FUSE_LIBS@ 
 endif
