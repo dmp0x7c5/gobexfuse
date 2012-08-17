@@ -33,6 +33,9 @@
 #include <bluetooth/sdp.h>
 #include <bluetooth/sdp_lib.h>
 
+#define BT_RX_MTU 32767
+#define BT_TX_MTU 32767
+
 #include "helpers.h"
 
 #define OBEX_FTP_UUID \
@@ -82,13 +85,12 @@ static uint16_t find_rfcomm_uuid(void *user_data)
 	return channel;
 }
 
-static uint16_t get_ftp_channel(const char *dststr)
+static uint16_t get_ftp_channel(bdaddr_t *src, bdaddr_t *dst)
 {
 	sdp_session_t *sdp;
 	sdp_list_t *r, *search_list, *attrid_list;
 	sdp_list_t *response_list = NULL;
 	uuid_t uuid;
-	bdaddr_t dst;
 
 	// FTP_SDP_UUID "00001106-0000-1000-8000-00805f9b34fb"
 	uint8_t uuid_int[] = {0, 0, 0x11, 0x06, 0, 0, 0x10, 0, 0x80,
@@ -96,9 +98,7 @@ static uint16_t get_ftp_channel(const char *dststr)
 	uint32_t range = 0x0000ffff;
 	uint16_t channel = 0;
 
-	str2ba(dststr, &dst);
-
-	sdp = sdp_connect(BDADDR_ANY, &dst, SDP_RETRY_IF_BUSY );
+	sdp = sdp_connect(src, dst, SDP_RETRY_IF_BUSY );
 	if (sdp == NULL)
 		return channel;
 
@@ -206,11 +206,12 @@ static void bt_io_callback(GIOChannel *io, GError *err, gpointer user_data)
 				OBEX_FTP_UUID_LEN, G_OBEX_HDR_INVALID);
 }
 
-struct gobexhlp_session* gobexhlp_connect(const char *target,
-						const char *source)
+struct gobexhlp_session* gobexhlp_connect(const char *srcstr,
+						const char *dststr)
 {
 	struct gobexhlp_session *session;
 	uint16_t channel;
+	bdaddr_t src, dst;
 
 	g_print("gobexhlp_connect()\n");
 
@@ -218,29 +219,37 @@ struct gobexhlp_session* gobexhlp_connect(const char *target,
 	if (session == NULL)
 		return NULL;
 
-	channel = get_ftp_channel(target);
+	if (srcstr == NULL)
+		bacpy(&src, BDADDR_ANY);
+	else
+		str2ba(srcstr, &src);
 
+	str2ba(dststr, &dst);
+	channel = get_ftp_channel(&src, &dst);
 	g_print("CHANNEL: %d\n", channel);
 
 	if (channel == 0)
 		return NULL;
 
-	if (source == NULL )
+	if (channel > 31)
+		session->io = bt_io_connect(BT_IO_L2CAP, bt_io_callback,
+				session, NULL, &session->err,
+				BT_IO_OPT_SOURCE_BDADDR, &src,
+				BT_IO_OPT_DEST_BDADDR, &dst,
+				BT_IO_OPT_PSM, channel,
+				BT_IO_OPT_MODE, BT_IO_MODE_ERTM,
+				BT_IO_OPT_OMTU, BT_TX_MTU,
+				BT_IO_OPT_IMTU, BT_RX_MTU,
+				BT_IO_OPT_SEC_LEVEL, BT_IO_SEC_LOW,
+				BT_IO_OPT_INVALID);
+	else 
 		session->io = bt_io_connect(BT_IO_RFCOMM, bt_io_callback,
-					session, NULL, &session->err,
-					BT_IO_OPT_DEST, target,
-					BT_IO_OPT_CHANNEL, channel,
-					BT_IO_OPT_SEC_LEVEL, BT_IO_SEC_LOW,
-					BT_IO_OPT_INVALID);
-	else
-		session->io = bt_io_connect(BT_IO_RFCOMM, bt_io_callback,
-					session, NULL, &session->err,
-					BT_IO_OPT_SOURCE, source,
-					BT_IO_OPT_DEST, target,
-					BT_IO_OPT_CHANNEL, channel,
-					BT_IO_OPT_SEC_LEVEL, BT_IO_SEC_LOW,
-					BT_IO_OPT_INVALID);
-
+				session, NULL, &session->err,
+				BT_IO_OPT_SOURCE_BDADDR, &src,
+				BT_IO_OPT_DEST_BDADDR, &dst,
+				BT_IO_OPT_CHANNEL, channel,
+				BT_IO_OPT_SEC_LEVEL, BT_IO_SEC_LOW,
+				BT_IO_OPT_INVALID);
 
 	if (session->err != NULL)
 		return NULL;

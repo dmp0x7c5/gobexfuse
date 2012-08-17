@@ -294,7 +294,7 @@ int main(int argc, char *argv[])
 	g_thread_init(NULL);
 	main_gthread = g_thread_create(main_loop_func, NULL, TRUE, NULL);
 
-	session = gobexhlp_connect(options.dststr, options.srcstr);
+	session = gobexhlp_connect(options.srcstr, options.dststr);
 	if (session == NULL || session->io == NULL) {
 		g_print("Connection to %s failed\n", options.dststr);
 		gobexhlp_disconnect(session);
