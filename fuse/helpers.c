@@ -208,7 +208,6 @@ static void bt_io_callback(GIOChannel *io, GError *err, gpointer user_data)
 
 struct gobexhlp_session* gobexhlp_connect(const char *target)
 {
-	GError *err = NULL;
 	struct gobexhlp_session *session;
 	uint16_t channel;
 
@@ -226,11 +225,14 @@ struct gobexhlp_session* gobexhlp_connect(const char *target)
 		return NULL;
 
 	session->io = bt_io_connect(BT_IO_RFCOMM, bt_io_callback,
-					session, NULL, &err,
+					session, NULL, &session->err,
 					BT_IO_OPT_DEST, target,
 					BT_IO_OPT_CHANNEL, channel,
 					BT_IO_OPT_SEC_LEVEL, BT_IO_SEC_LOW,
 					BT_IO_OPT_INVALID);
+
+	if (session->err != NULL)
+		return NULL;
 
 	session->file_stat = g_hash_table_new_full( g_str_hash, g_str_equal,
 					g_free, g_free);
