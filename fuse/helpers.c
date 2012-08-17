@@ -206,7 +206,8 @@ static void bt_io_callback(GIOChannel *io, GError *err, gpointer user_data)
 				OBEX_FTP_UUID_LEN, G_OBEX_HDR_INVALID);
 }
 
-struct gobexhlp_session* gobexhlp_connect(const char *target)
+struct gobexhlp_session* gobexhlp_connect(const char *target,
+						const char *source)
 {
 	struct gobexhlp_session *session;
 	uint16_t channel;
@@ -224,12 +225,22 @@ struct gobexhlp_session* gobexhlp_connect(const char *target)
 	if (channel == 0)
 		return NULL;
 
-	session->io = bt_io_connect(BT_IO_RFCOMM, bt_io_callback,
+	if (source == NULL )
+		session->io = bt_io_connect(BT_IO_RFCOMM, bt_io_callback,
 					session, NULL, &session->err,
 					BT_IO_OPT_DEST, target,
 					BT_IO_OPT_CHANNEL, channel,
 					BT_IO_OPT_SEC_LEVEL, BT_IO_SEC_LOW,
 					BT_IO_OPT_INVALID);
+	else
+		session->io = bt_io_connect(BT_IO_RFCOMM, bt_io_callback,
+					session, NULL, &session->err,
+					BT_IO_OPT_SOURCE, source,
+					BT_IO_OPT_DEST, target,
+					BT_IO_OPT_CHANNEL, channel,
+					BT_IO_OPT_SEC_LEVEL, BT_IO_SEC_LOW,
+					BT_IO_OPT_INVALID);
+
 
 	if (session->err != NULL)
 		return NULL;
@@ -267,7 +278,7 @@ void gobexhlp_disconnect(struct gobexhlp_session* session)
 void request_new(struct gobexhlp_session *session,
 					gchar *name)
 {
-	g_print("REQUEST NEW %s\n", name);
+	g_print("REQUEST %s\n", name);
 
 	if (session->vtouch == TRUE) {
 		session->vtouch = FALSE;

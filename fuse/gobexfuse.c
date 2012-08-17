@@ -38,6 +38,7 @@ static GThread *main_gthread;
 
 struct options {
 	char* dststr;
+	char* srcstr;
 } options;
 
 #define GOBEXFUSE_OPT_KEY(t, p, v) { t, offsetof(struct options, p), v }
@@ -52,6 +53,8 @@ static struct fuse_opt gobexfuse_opts[] =
 {
 	GOBEXFUSE_OPT_KEY("--target=%s",dststr, 0),
 	GOBEXFUSE_OPT_KEY("-t %s",	dststr, 0),
+	GOBEXFUSE_OPT_KEY("--source=%s",srcstr, 0),
+	GOBEXFUSE_OPT_KEY("-s %s",	srcstr, 0),
 
 	FUSE_OPT_KEY("-V",             KEY_VERSION),
 	FUSE_OPT_KEY("--version",      KEY_VERSION),
@@ -291,7 +294,7 @@ int main(int argc, char *argv[])
 	g_thread_init(NULL);
 	main_gthread = g_thread_create(main_loop_func, NULL, TRUE, NULL);
 
-	session = gobexhlp_connect(options.dststr);
+	session = gobexhlp_connect(options.dststr, options.srcstr);
 	if (session == NULL || session->io == NULL) {
 		g_print("Connection to %s failed\n", options.dststr);
 		gobexhlp_disconnect(session);
