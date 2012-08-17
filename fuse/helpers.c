@@ -65,6 +65,7 @@ struct gobexhlp_session {
 	gchar *vtouch_path;
 	gboolean rtouch;
 	int status;
+	GError *err;
 };
 
 struct gobexhlp_location {
@@ -213,8 +214,8 @@ static void bt_io_callback(GIOChannel *io, GError *err, gpointer user_data)
 
 	g_print("Bluetooth socket connected\n");
 
-	//g_io_channel_set_flags(session->io, G_IO_FLAG_NONBLOCK, NULL);
-	//g_io_channel_set_close_on_unref(session->io, TRUE);
+	g_io_channel_set_flags(session->io, G_IO_FLAG_NONBLOCK, NULL);
+	g_io_channel_set_close_on_unref(session->io, TRUE);
 
 	if (get_packet_opt(session->io, &tx_mtu, &rx_mtu) == 0) {
 		type = G_OBEX_TRANSPORT_PACKET;
@@ -289,21 +290,21 @@ void gobexhlp_disconnect(struct gobexhlp_session* session)
 void request_new(struct gobexhlp_session *session,
 					gchar *name)
 {
+	g_print("REQUEST NEW %s\n", name);
+
 	if (session->vtouch == TRUE) {
 		session->vtouch = FALSE;
 		gobexhlp_touch_real(session, session->vtouch_path);
 		g_free(session->vtouch_path);
 	}
 
-	
 	if (session->request != NULL)
 		g_error("Another request (%s) active!\n",
 					session->request->name);
 
+	session->status = 0;
 	session->request = g_malloc0(sizeof(struct gobexhlp_request));
 	session->request->name = name;
-	
-	g_print("REQUEST NEW %s\n", session->request->name);
 	
 	/* 
 	 * suspend/resume operations recreates g_io_add_watch(),
@@ -320,13 +321,20 @@ void request_wait_free(struct gobexhlp_session *session)
 	g_obex_suspend(session->obex);
 	g_obex_resume(session->obex);
 
+	if (session->err != NULL) {
+		g_print("ERROR: %s (%d)\n", session->err->message,
+						session->err->code);
+		g_error_free(session->err);
+		raise(SIGTERM);
+	}
+
 	g_mutex_lock(gobexhlp_mutex);
 	
 	while (session->request->complete != TRUE)
 		g_cond_wait(gobexhlp_cond, gobexhlp_mutex);
 
 	g_mutex_unlock(gobexhlp_mutex);
-	
+
 	g_free(session->request->name);
 	g_free(session->request);
 	session->request = NULL;
@@ -337,20 +345,17 @@ static void complete_func(GObex *obex, GError *err,
 {
 	struct gobexhlp_session *session = user_data;
 	
-	g_mutex_lock(gobexhlp_mutex);
-	session->request->complete = TRUE;
-	g_cond_signal(gobexhlp_cond);
-
 	if (err != NULL) {
 		g_print("ERROR: %s\n", err->message);
-		//gobexhlp_disconnect(session);
 		session->status = -ECANCELED;
 		g_error_free(err);
 	} else {
 		g_print("COMPLETE %s\n", session->request->name);
-		session->status = 0;
 	}
 
+	g_mutex_lock(gobexhlp_mutex);
+	session->request->complete = TRUE;
+	g_cond_signal(gobexhlp_cond);
 	g_mutex_unlock(gobexhlp_mutex);
 }
 
@@ -408,9 +413,8 @@ static void listfolder_xml_element(GMarkupParseContext *ctxt,
 	else
 		pathname = g_strdup_printf("%s/%s", session->setpath, name);
 
-	g_free(name);
-
 	g_hash_table_replace(session->file_stat, pathname, stbuf);
+	g_free(name);
 }
 
 static const GMarkupParser parser = {
@@ -478,10 +482,9 @@ void gobexhlp_setpath(struct gobexhlp_session *session, const char *path)
 		split = strlen(session->setpath);
 	}
 	else {
-		request_new(session,
-					g_strdup_printf("setpath root"));
+		request_new(session, g_strdup_printf("setpath root"));
 		g_obex_setpath(session->obex, "", response_func,
-							session, NULL);
+						session, &session->err);
 		request_wait_free(session);
 	}
 
@@ -493,7 +496,7 @@ void gobexhlp_setpath(struct gobexhlp_session *session, const char *path)
 			request_new(session,
 				g_strdup_printf("setpath %s", path_v[i]));
 			g_obex_setpath(session->obex, path_v[i],
-					response_func, session, NULL);
+					response_func, session, &session->err);
 			request_wait_free(session);
 		}
 
@@ -554,7 +557,7 @@ GList *gobexhlp_listfolder(struct gobexhlp_session* session,
 	reqpkt = g_obex_get_req_pkt(session->obex, req,
 				async_get_consumer,
 				complete_listfolder_func,
-				session, NULL);
+				session, &session->err);
 	request_wait_free(session);
 	g_free(buffer->data);
 	g_free(buffer);
@@ -584,7 +587,8 @@ void gobexhlp_mkdir(struct gobexhlp_session* session, const char *path)
 	
 	request_new(session, g_strdup_printf("mkdir %s", path));
 	/* g_obex_mkdir also sets path, to new folder */
-	g_obex_mkdir(session->obex, l->file, response_func, session, NULL);
+	g_obex_mkdir(session->obex, l->file, response_func, session,
+							&session->err);
 	g_free(session->setpath);
 	session->setpath = g_strdup(path);
 
@@ -620,7 +624,7 @@ struct gobexhlp_buffer *gobexhlp_get(struct gobexhlp_session* session,
 	request_new(session, g_strdup_printf("get %s", path));
 	session->buffer = buffer;
 	g_obex_get_req(session->obex, async_get_consumer,
-					complete_func, session, NULL,
+					complete_func, session, &session->err,
 					G_OBEX_HDR_NAME, l->file,
 					G_OBEX_HDR_INVALID);
 	free_location(l);
@@ -680,7 +684,7 @@ void gobexhlp_put(struct gobexhlp_session* session,
 	session->buffer = buffer;
 	request_new(session, g_strdup_printf("put %s", path));
 	g_obex_put_req(session->obex, async_put_producer,
-					complete_func, session, NULL,
+					complete_func, session, &session->err,
 					G_OBEX_HDR_NAME, l->file,
 					G_OBEX_HDR_INVALID);
 	free_location(l);
@@ -728,7 +732,8 @@ void gobexhlp_delete(struct gobexhlp_session* session, const char *path)
 
 	gobexhlp_setpath(session, l->dir);
 	request_new(session, g_strdup_printf("delete %s", path));
-	g_obex_delete(session->obex, l->file, response_func, session, NULL);
+	g_obex_delete(session->obex, l->file, response_func, session,
+							&session->err);
 
 	g_hash_table_remove(session->file_stat, path);
 
@@ -736,10 +741,6 @@ void gobexhlp_delete(struct gobexhlp_session* session, const char *path)
 	request_wait_free(session);
 }
 
-/*
- * After rename or copy, HTC doesn't send any response,
- * SE does nothing.
- */
 void gobexhlp_move(struct gobexhlp_session* session, const char *oldpath,
 						const char* newpath)
 {
@@ -754,7 +755,7 @@ void gobexhlp_move(struct gobexhlp_session* session, const char *oldpath,
 	request_new(session, g_strdup_printf("move %s:%s",
 					oldpath, newpath));
 	g_obex_move(session->obex, l_from->file, l_to->file, response_func,
-					session, NULL);
+						session, &session->err);
 	free_location(l_to);
 	free_location(l_from);
 	request_wait_free(session);
