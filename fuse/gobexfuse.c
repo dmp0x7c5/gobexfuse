@@ -79,6 +79,22 @@ gpointer main_loop_func(gpointer user_data)
 
 void* gobexfuse_init(struct fuse_conn_info *conn)
 {
+	if (options.dststr == NULL) {
+		g_print("Target not specified\n");
+		raise(SIGINT);
+		return 0;
+	}
+
+	g_thread_init(NULL);
+	main_gthread = g_thread_create(main_loop_func, NULL, TRUE, NULL);	
+
+	session = gobexhlp_connect(options.srcstr, options.dststr);
+	if (session == NULL || session->io == NULL) {
+		g_print("Connection to %s failed\n", options.dststr);
+		gobexhlp_disconnect(session);
+		raise(SIGINT);
+	}
+
 	conn->async_read = 0;
 	conn->want &= ~FUSE_CAP_ASYNC_READ;
 	
@@ -285,21 +301,6 @@ int main(int argc, char *argv[])
 
 	if (fuse_opt_parse(&args, &options, gobexfuse_opts, NULL) == -1)
 		return -EINVAL;
-
-	if (options.dststr == NULL) {
-		g_print("Target not specified");
-		return -EINVAL;
-	}
-
-	g_thread_init(NULL);
-	main_gthread = g_thread_create(main_loop_func, NULL, TRUE, NULL);
-
-	session = gobexhlp_connect(options.srcstr, options.dststr);
-	if (session == NULL || session->io == NULL) {
-		g_print("Connection to %s failed\n", options.dststr);
-		gobexhlp_disconnect(session);
-		return -EHOSTDOWN;
-	}
 
 	fuse_opt_add_arg(&args, "-s"); /* force single threaded mode */
 	retfuse = fuse_main(args.argc, args.argv, &gobexfuse_oper, NULL);
