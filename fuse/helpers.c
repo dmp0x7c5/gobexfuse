@@ -323,6 +323,7 @@ void request_wait_free(struct gobexhlp_session *session)
 						session->err->code);
 		g_error_free(session->err);
 		raise(SIGTERM);
+		return;
 	}
 
 	g_mutex_lock(gobexhlp_mutex);
