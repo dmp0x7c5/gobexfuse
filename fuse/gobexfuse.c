@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <fuse.h>
@@ -79,22 +80,6 @@ gpointer main_loop_func(gpointer user_data)
 
 void* gobexfuse_init(struct fuse_conn_info *conn)
 {
-	if (options.dststr == NULL) {
-		g_print("Target not specified\n");
-		raise(SIGINT);
-		return 0;
-	}
-
-	g_thread_init(NULL);
-	main_gthread = g_thread_create(main_loop_func, NULL, TRUE, NULL);	
-
-	session = gobexhlp_connect(options.srcstr, options.dststr);
-	if (session == NULL || session->io == NULL) {
-		g_print("Connection to %s failed\n", options.dststr);
-		gobexhlp_disconnect(session);
-		raise(SIGINT);
-	}
-
 	conn->async_read = 0;
 	conn->want &= ~FUSE_CAP_ASYNC_READ;
 	
@@ -292,6 +277,36 @@ static struct fuse_operations gobexfuse_oper = {
 	.destroy = gobexfuse_destroy,
 };
 
+static int gobexfuse_opt_proc(void *data, const char *arg, int key,
+					struct fuse_args *outargs)
+{
+	switch (key) {
+	case KEY_HELP:
+		g_printerr("Usage: %s mountpoint [options]\n"
+				"\n"
+				"general options:\n"
+				"    -o opt,[opt...]  mount options\n"
+				"    -h   --help      print help\n"
+				"    -V   --version   print version\n"
+				"\n"
+				"gobexfuse options:\n"
+				"    -t   --target    target btaddr "
+				"(mandatory)\n"
+				"    -s   --source    source btaddr\n"
+				"\n"
+				, outargs->argv[0]);
+		fuse_opt_add_arg(outargs, "-ho");
+		fuse_main(outargs->argc, outargs->argv, &gobexfuse_oper, NULL);
+		exit(1);
+	case KEY_VERSION:
+		g_print("gobexfuse upon:\n");
+		fuse_opt_add_arg(outargs, "--version");
+		fuse_main(outargs->argc, outargs->argv, &gobexfuse_oper, NULL);
+		exit(0);
+	}
+	return 1;
+}
+
 int main(int argc, char *argv[])
 {
 	int retfuse;
@@ -299,8 +314,26 @@ int main(int argc, char *argv[])
 
 	memset(&options, 0, sizeof(struct options));
 
-	if (fuse_opt_parse(&args, &options, gobexfuse_opts, NULL) == -1)
+	if (fuse_opt_parse(&args, &options, gobexfuse_opts,
+				gobexfuse_opt_proc) == -1)
 		return -EINVAL;
+
+	if (options.dststr == NULL) {
+		g_printerr("Target not specified\n");
+		return -EINVAL;
+	}
+
+	g_thread_init(NULL);
+	main_gthread = g_thread_create(main_loop_func, NULL, TRUE, NULL);	
+
+	session = gobexhlp_connect(options.srcstr, options.dststr);
+	if (session == NULL || session->io == NULL) {
+		g_printerr("Connection to %s failed\n", options.dststr);
+		gobexhlp_disconnect(session);
+		return -EHOSTUNREACH;
+	} else {
+		g_print("Connected\nMounting %s\n", options.dststr);
+	}
 
 	fuse_opt_add_arg(&args, "-s"); /* force single threaded mode */
 	retfuse = fuse_main(args.argc, args.argv, &gobexfuse_oper, NULL);
