@@ -132,7 +132,8 @@ client_obex_client_LDADD = @GLIB_LIBS@ @DBUS_LIBS@ @BLUEZ_LIBS@
 endif
 
 if FUSE
-noinst_PROGRAMS += fuse/gobexfuse
+bin_PROGRAMS = fuse/gobexfuse
+#noinst_PROGRAMS += fuse/gobexfuse
 
 fuse_gobexfuse_SOURCES = $(gobex_sources) $(btio_sources) \
 		fuse/helpers.c fuse/gobexfuse.c
