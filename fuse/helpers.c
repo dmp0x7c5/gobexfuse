@@ -166,11 +166,11 @@ static void obex_callback(GObex *obex, GError *err, GObexPacket *rsp,
 							gpointer user_data)
 {
 	if (err != NULL) {
-		g_print("Connect failed: %s\n", err->message);
+		g_debug("Connect failed: %s\n", err->message);
 		g_error_free(err);
 	}
 	else {
-		g_print("Connect succeeded\n");
+		g_debug("Connect succeeded\n");
 	}
 }
 
@@ -187,17 +187,17 @@ static void bt_io_callback(GIOChannel *io, GError *err, gpointer user_data)
 		return;
 	}
 
-	g_print("Bluetooth socket connected\n");
+	g_debug("Bluetooth socket connected\n");
 
 	g_io_channel_set_flags(session->io, G_IO_FLAG_NONBLOCK, NULL);
 	g_io_channel_set_close_on_unref(session->io, TRUE);
 
 	if (get_packet_opt(session->io, &tx_mtu, &rx_mtu) == 0) {
 		type = G_OBEX_TRANSPORT_PACKET;
-		g_print("PACKET transport tx:%d rx:%d\n", tx_mtu, rx_mtu);
+		g_debug("PACKET transport tx:%d rx:%d\n", tx_mtu, rx_mtu);
 	} else {
 		type = G_OBEX_TRANSPORT_STREAM;
-		g_print("STREAM transport\n");
+		g_debug("STREAM transport\n");
 	}
 
 	session->obex = g_obex_new(io, type, tx_mtu, rx_mtu);
@@ -213,8 +213,6 @@ struct gobexhlp_session* gobexhlp_connect(const char *srcstr,
 	uint16_t channel;
 	bdaddr_t src, dst;
 
-	g_print("gobexhlp_connect()\n");
-
 	session = g_try_malloc0(sizeof(struct gobexhlp_session));
 	if (session == NULL)
 		return NULL;
@@ -226,7 +224,6 @@ struct gobexhlp_session* gobexhlp_connect(const char *srcstr,
 
 	str2ba(dststr, &dst);
 	channel = get_ftp_channel(&src, &dst);
-	g_print("CHANNEL: %d\n", channel);
 
 	if (channel == 0)
 		return NULL;
@@ -266,8 +263,6 @@ struct gobexhlp_session* gobexhlp_connect(const char *srcstr,
 
 void gobexhlp_disconnect(struct gobexhlp_session* session)
 {
-	g_print("gobexhlp_disconnect()\n");
-
 	if (session == NULL)
 		return;
 
