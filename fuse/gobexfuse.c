@@ -80,6 +80,8 @@ gpointer main_loop_func(gpointer user_data)
 
 void* gobexfuse_init(struct fuse_conn_info *conn)
 {
+	main_gthread = g_thread_create(main_loop_func, NULL, TRUE, NULL);	
+
 	conn->async_read = 0;
 	conn->want &= ~FUSE_CAP_ASYNC_READ;
 	
@@ -322,9 +324,8 @@ int main(int argc, char *argv[])
 		g_printerr("Target not specified\n");
 		return -EINVAL;
 	}
-
+	
 	g_thread_init(NULL);
-	main_gthread = g_thread_create(main_loop_func, NULL, TRUE, NULL);	
 
 	session = gobexhlp_connect(options.srcstr, options.dststr);
 	if (session == NULL || session->io == NULL) {
