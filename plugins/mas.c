@@ -32,6 +32,7 @@
 #include <inttypes.h>
 
 #include <gobex/gobex.h>
+#include <gobex/gobex-apparam.h>
 
 #include "obexd.h"
 #include "plugin.h"
@@ -44,6 +45,9 @@
 #include "map_ap.h"
 
 #include "messages.h"
+
+#define READ_STATUS_REQ 0
+#define DELETE_STATUS_REQ 1
 
 /* Channel number according to bluez doc/assigned-numbers.txt */
 #define MAS_CHANNEL	16
@@ -112,8 +116,8 @@ struct mas_session {
 	gboolean finished;
 	gboolean nth_call;
 	GString *buffer;
-	map_ap_t *inparams;
-	map_ap_t *outparams;
+	GObexApparam *inparams;
+	GObexApparam *outparams;
 	gboolean ap_sent;
 };
 
@@ -130,13 +134,11 @@ static int get_params(struct obex_session *os, struct mas_session *mas)
 	if (size < 0)
 		size = 0;
 
-	mas->inparams = map_ap_decode(buffer, size);
+	mas->inparams = g_obex_apparam_decode(buffer, size);
 	if (mas->inparams == NULL) {
 		DBG("Error when parsing parameters!");
 		return -EBADR;
 	}
-
-	mas->outparams = map_ap_new();
 
 	return 0;
 }
@@ -148,10 +150,15 @@ static void reset_request(struct mas_session *mas)
 		mas->buffer = NULL;
 	}
 
-	map_ap_free(mas->inparams);
-	mas->inparams = NULL;
-	map_ap_free(mas->outparams);
-	mas->outparams = NULL;
+	if (mas->inparams) {
+		g_obex_apparam_free(mas->inparams);
+		mas->inparams = NULL;
+	}
+
+	if (mas->outparams) {
+		g_obex_apparam_free(mas->outparams);
+		mas->outparams = NULL;
+	}
 
 	mas->nth_call = FALSE;
 	mas->finished = FALSE;
@@ -289,7 +296,7 @@ static void get_messages_listing_cb(void *session, int err, uint16_t size,
 		return;
 	}
 
-	map_ap_get_u16(mas->inparams, MAP_AP_MAXLISTCOUNT, &max);
+	g_obex_apparam_get_uint16(mas->inparams, MAP_AP_MAXLISTCOUNT, &max);
 
 	if (max == 0) {
 		if (!entry)
@@ -390,10 +397,12 @@ static void get_messages_listing_cb(void *session, int err, uint16_t size,
 
 proceed:
 	if (!entry) {
-		map_ap_set_u16(mas->outparams, MAP_AP_MESSAGESLISTINGSIZE,
-							size);
-		map_ap_set_u8(mas->outparams, MAP_AP_NEWMESSAGE,
-							newmsg ? 1 : 0);
+		mas->outparams = g_obex_apparam_set_uint16(mas->outparams,
+						MAP_AP_MESSAGESLISTINGSIZE,
+						size);
+		mas->outparams = g_obex_apparam_set_uint8(mas->outparams,
+						MAP_AP_NEWMESSAGE,
+						newmsg ? 1 : 0);
 	}
 
 	if (err != -EAGAIN)
@@ -435,12 +444,14 @@ static void get_folder_listing_cb(void *session, int err, uint16_t size,
 		return;
 	}
 
-	map_ap_get_u16(mas->inparams, MAP_AP_MAXLISTCOUNT, &max);
+	g_obex_apparam_get_uint16(mas->inparams, MAP_AP_MAXLISTCOUNT, &max);
 
 	if (max == 0) {
 		if (err != -EAGAIN)
-			map_ap_set_u16(mas->outparams,
-					MAP_AP_FOLDERLISTINGSIZE, size);
+			mas->outparams = g_obex_apparam_set_uint16(
+						mas->outparams,
+						MAP_AP_FOLDERLISTINGSIZE,
+						size);
 
 		if (!name)
 			mas->finished = TRUE;
@@ -477,7 +488,7 @@ proceed:
 		obex_object_set_io_flags(mas, G_IO_IN, err);
 }
 
-static void update_inbox_cb(void *session, int err, void *user_data)
+static void set_status_cb(void *session, int err, void *user_data)
 {
 	struct mas_session *mas = user_data;
 
@@ -529,8 +540,8 @@ static void *folder_listing_open(const char *name, int oflag, mode_t mode,
 
 	DBG("name = %s", name);
 
-	map_ap_get_u16(mas->inparams, MAP_AP_MAXLISTCOUNT, &max);
-	map_ap_get_u16(mas->inparams, MAP_AP_STARTOFFSET, &offset);
+	g_obex_apparam_get_uint16(mas->inparams, MAP_AP_MAXLISTCOUNT, &max);
+	g_obex_apparam_get_uint16(mas->inparams, MAP_AP_STARTOFFSET, &offset);
 
 	*err = messages_get_folder_listing(mas->backend_data, name, max,
 					offset, get_folder_listing_cb, mas);
@@ -551,6 +562,9 @@ static void *msg_listing_open(const char *name, int oflag, mode_t mode,
 	/* 1024 is the default when there was no MaxListCount sent */
 	uint16_t max = 1024;
 	uint16_t offset = 0;
+	/* If MAP client does not specify the subject length,
+	   then subject_len = 0 and subject should be sent unaltered. */
+	uint8_t subject_len = 0;
 
 	DBG("");
 
@@ -559,28 +573,30 @@ static void *msg_listing_open(const char *name, int oflag, mode_t mode,
 		return NULL;
 	}
 
-	map_ap_get_u16(mas->inparams, MAP_AP_MAXLISTCOUNT, &max);
-	map_ap_get_u16(mas->inparams, MAP_AP_STARTOFFSET, &offset);
+	g_obex_apparam_get_uint16(mas->inparams, MAP_AP_MAXLISTCOUNT, &max);
+	g_obex_apparam_get_uint16(mas->inparams, MAP_AP_STARTOFFSET, &offset);
+	g_obex_apparam_get_uint8(mas->inparams, MAP_AP_SUBJECTLENGTH,
+						&subject_len);
 
-	map_ap_get_u32(mas->inparams, MAP_AP_PARAMETERMASK,
+	g_obex_apparam_get_uint32(mas->inparams, MAP_AP_PARAMETERMASK,
 						&filter.parameter_mask);
-	map_ap_get_u8(mas->inparams, MAP_AP_FILTERMESSAGETYPE,
+	g_obex_apparam_get_uint8(mas->inparams, MAP_AP_FILTERMESSAGETYPE,
 						&filter.type);
-	filter.period_begin = map_ap_get_string(mas->inparams,
+	filter.period_begin = g_obex_apparam_get_string(mas->inparams,
 						MAP_AP_FILTERPERIODBEGIN);
-	filter.period_end = map_ap_get_string(mas->inparams,
+	filter.period_end = g_obex_apparam_get_string(mas->inparams,
 						MAP_AP_FILTERPERIODEND);
-	map_ap_get_u8(mas->inparams, MAP_AP_FILTERREADSTATUS,
+	g_obex_apparam_get_uint8(mas->inparams, MAP_AP_FILTERREADSTATUS,
 						&filter.read_status);
-	filter.recipient = map_ap_get_string(mas->inparams,
+	filter.recipient = g_obex_apparam_get_string(mas->inparams,
 						MAP_AP_FILTERRECIPIENT);
-	filter.originator = map_ap_get_string(mas->inparams,
+	filter.originator = g_obex_apparam_get_string(mas->inparams,
 						MAP_AP_FILTERORIGINATOR);
-	map_ap_get_u8(mas->inparams, MAP_AP_FILTERPRIORITY,
+	g_obex_apparam_get_uint8(mas->inparams, MAP_AP_FILTERPRIORITY,
 						&filter.priority);
 
 	*err = messages_get_messages_listing(mas->backend_data, name, max,
-			offset, &filter,
+			offset, subject_len, &filter,
 			get_messages_listing_cb, mas);
 
 	mas->buffer = g_string_new("");
@@ -624,24 +640,65 @@ static void *message_update_open(const char *name, int oflag, mode_t mode,
 
 	DBG("");
 
-	if (oflag != O_WRONLY) {
+	if (oflag == O_RDONLY) {
 		*err = -EBADR;
 		return NULL;
 	}
 
-	*err = messages_update_inbox(mas->backend_data, update_inbox_cb, mas);
+	*err = messages_update_inbox(mas->backend_data, set_status_cb, mas);
 	if (*err < 0)
 		return NULL;
 	else
 		return mas;
 }
 
+static void *message_set_status_open(const char *name, int oflag, mode_t mode,
+					void *driver_data, size_t *size,
+					int *err)
+
+{
+	struct mas_session *mas = driver_data;
+	uint8_t indicator;
+	uint8_t value;
+
+	DBG("");
+
+	if (oflag == O_RDONLY) {
+		*err = -EBADR;
+		return NULL;
+	}
+
+	if (!g_obex_apparam_get_uint8(mas->inparams, MAP_AP_STATUSINDICATOR,
+								&indicator)) {
+		*err = -EBADR;
+		return NULL;
+	}
+
+	if (!g_obex_apparam_get_uint8(mas->inparams, MAP_AP_STATUSVALUE,
+								&value)) {
+		*err = -EBADR;
+		return NULL;
+	}
+
+	if (indicator == READ_STATUS_REQ)
+		*err = messages_set_read(mas->backend_data, name, value,
+							set_status_cb, mas);
+	else if (indicator == DELETE_STATUS_REQ)
+		*err = messages_set_delete(mas->backend_data, name, value,
+							set_status_cb, mas);
+	else
+		*err = -EBADR;
+
+	if (*err < 0)
+		return NULL;
+
+	return mas;
+}
+
 static ssize_t any_get_next_header(void *object, void *buf, size_t mtu,
 								uint8_t *hi)
 {
 	struct mas_session *mas = object;
-	size_t len;
-	uint8_t *apbuf;
 
 	DBG("");
 
@@ -654,18 +711,7 @@ static ssize_t any_get_next_header(void *object, void *buf, size_t mtu,
 		return 0;
 
 	mas->ap_sent = TRUE;
-	apbuf = map_ap_encode(mas->outparams, &len);
-
-	if (len > mtu) {
-		DBG("MTU is to small to fit application parameters header!");
-		g_free(apbuf);
-
-		return -EIO;
-	}
-
-	memcpy(buf, apbuf, len);
-
-	return len;
+	return g_obex_apparam_encode(mas->outparams, buf, mtu);
 }
 
 static void *any_open(const char *name, int oflag, mode_t mode,
@@ -784,7 +830,7 @@ static struct obex_mime_type_driver mime_message_status = {
 	.target = MAS_TARGET,
 	.target_size = TARGET_SIZE,
 	.mimetype = "x-bt/messageStatus",
-	.open = any_open,
+	.open = message_set_status_open,
 	.close = any_close,
 	.read = any_read,
 	.write = any_write,

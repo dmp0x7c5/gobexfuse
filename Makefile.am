@@ -20,7 +20,8 @@ gobex_sources = gobex/gobex.h gobex/gobex.c \
 			gobex/gobex-defs.h gobex/gobex-defs.c \
 			gobex/gobex-packet.c gobex/gobex-packet.h \
 			gobex/gobex-header.c gobex/gobex-header.h \
-			gobex/gobex-transfer.c gobex/gobex-debug.h
+			gobex/gobex-transfer.c gobex/gobex-debug.h \
+			gobex/gobex-apparam.h gobex/gobex-apparam.c
 
 noinst_PROGRAMS =
 libexec_PROGRAMS =
@@ -62,7 +63,7 @@ builtin_sources += plugins/pbap.c plugins/phonebook.h \
 
 builtin_modules += mas
 builtin_sources += plugins/mas.c plugins/messages.h \
-			src/map_ap.c src/map_ap.h
+			src/map_ap.h
 
 builtin_modules += irmc
 builtin_sources += plugins/irmc.c
@@ -126,7 +127,7 @@ client_obex_client_SOURCES = $(gdbus_sources) $(gobex_sources) \
 				client/transport.h client/transport.c \
 				client/dbus.h client/dbus.c \
 				client/driver.h client/driver.c \
-				src/map_ap.h src/map_ap.c
+				src/map_ap.h
 
 client_obex_client_LDADD = @GLIB_LIBS@ @DBUS_LIBS@ @BLUEZ_LIBS@
 endif
@@ -175,11 +176,12 @@ plugins/phonebook.c: plugins/@PHONEBOOK_DRIVER@
 plugins/messages.c: plugins/@MESSAGES_DRIVER@
 	$(AM_V_GEN)$(LN_S) @abs_top_srcdir@/$< $@
 
-TESTS = unit/test-gobex-header unit/test-gobex-packet unit/test-gobex \
-						unit/test-gobex-transfer
+TESTS = unit/test-gobex-apparam unit/test-gobex-header unit/test-gobex-packet \
+				unit/test-gobex unit/test-gobex-transfer
 
 noinst_PROGRAMS += unit/test-gobex-header unit/test-gobex-packet \
-				unit/test-gobex unit/test-gobex-transfer
+			unit/test-gobex unit/test-gobex-transfer \
+			unit/test-gobex-apparam
 
 unit_test_gobex_SOURCES = $(gobex_sources) unit/test-gobex.c \
 							unit/util.c unit/util.h
@@ -196,6 +198,10 @@ unit_test_gobex_header_LDADD = @GLIB_LIBS@
 unit_test_gobex_transfer_SOURCES = $(gobex_sources) unit/util.c unit/util.h \
 						unit/test-gobex-transfer.c
 unit_test_gobex_transfer_LDADD = @GLIB_LIBS@
+
+unit_test_gobex_apparam_SOURCES = $(gobex_sources) unit/util.c unit/util.h \
+						unit/test-gobex-apparam.c
+unit_test_gobex_apparam_LDADD = @GLIB_LIBS@
 
 if READLINE
 noinst_PROGRAMS += tools/test-client

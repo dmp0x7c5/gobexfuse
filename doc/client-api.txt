@@ -206,7 +206,7 @@ Methods		void Select(string location, string phonebook)
 				"mch":	missing call history
 				"cch":	combination of ich och mch
 
-		object, dict PullAll(string targetfile)
+		object, dict PullAll(string targetfile, dict filters)
 
 			Return the entire phonebook object from the PSE server
 			in plain string with vcard format, and store it in
@@ -222,16 +222,24 @@ Methods		void Select(string location, string phonebook)
 			The properties of this transfer are also returned along
 			with the object path, to avoid a call to GetProperties.
 
-		array{string vcard, string name} List()
+			Possible filters: Format, Order, Offset, MaxCount and
+			Fields
 
-			Return an array of vcard-listing data which contains the
-			vcard : name paired string, for example "1.vcf" :
-				"John".
+		array{string vcard, string name} List(dict filters)
 
-		object, dict Pull(string vcard, string targetfile)
+			Return an array of vcard-listing data where every entry
+			consists of a pair of strings containing the vcard
+			handle and the contact name. For example:
+				"1.vcf" : "John"
 
-			Retrieve the vcard in the current phonebook object and
-			store it in a local file.
+			Possible filters: Order, Offset and MaxCount
+
+
+		object, dict
+		Pull(string vcard, string targetfile, dict filters)
+
+			Given a vcard handle, retrieve the vcard in the current
+			phonebook object and store it in a local file.
 
 			If an empty target file is given, a name will be
 			automatically calculated for the temporary file.
@@ -243,56 +251,64 @@ Methods		void Select(string location, string phonebook)
 			The properties of this transfer are also returned along
 			with the object path, to avoid a call to GetProperties.
 
-		array{string vcard, string name}
-		Search(string field, string value)
+			Possbile filters: Format and Fields
 
-			Return an array of vcard-listing data which contains the
+
+		array{string vcard, string name}
+		Search(string field, string value, dict filters)
+
+			Search for entries matching the given condition and
+			return an array of vcard-listing data where every entry
+			consists of a pair of strings containing the vcard
+			handle and the contact name.
+
 			vcard : name paired string match the search condition.
 
 			field : the field in the vcard to search with
 				{ "name" (default) | "number" | "sound" }
 			value : the string value to search for
 
+
+			Possible filters: Order, Offset and MaxCount
+
 		uint16 GetSize()
 
-			Return the number of the non-null entries in the
-			selected phonebook object.
-
-		void SetFormat(string format)
-
-			Indicate the format of the vcard that should be return
-			by related methods.
-
-			format : { "vcard21" (default) | "vcard30" }
-
-		void SetOrder(string order)
-
-			Indicate the sorting method of the vcard-listing data
-			returned by List and Search methods.
-
-			order : { "indexed" (default) | "alphanumeric" |
-					"phonetic" }
-
-		void SetFilter(array{string})
-
-			Indicate fields that should be contained in vcards
-			return by related methods.
-
-			Give an empty array will clear the filter and return
-			all fields available in vcards. And this is the default
-			behavior.
-
-			Possible filter fields : "VERSION", "FN", ..., "ALL",
-			"bit[0-63]"
+			Return the number of entries in the selected phonebook
+			object that are actually used (i.e. indexes that
+			correspond to non-NULL entries).
 
 		array{string} ListFilterFields()
 
-			Return All Available fields that can be used in
-			SefFilter method.
+			Return All Available fields that can be used in Fields
+			filter.
 
-		array{string} GetFilter()
+Filter:		string Format:
 
-			Return the current filter setting
+			Items vcard format
+
+			Possible values: "vcard21" (default) or "vcard30"
+
+		string Order:
+
+			Items order
+
+			Possible values: "indexed" (default), "alphanumeric" or
+			"phonetic"
+
+		uint16 Offset:
+
+			Offset of the first item, default is 0
+
+		uint16 MaxCount:
+
+			Maximum number of items, default is unlimited (65535)
+
+		array{string} Fields:
+
+			Item vcard fields, default is all values.
+
+			Possible values can be query with ListFilterFields.
+
 
 Synchronization hierarchy
 =======================
@@ -352,12 +368,115 @@ Methods		void SetFolder(string name)
 			Set working directory for current session, *name* may
 			be the directory name or '..[/dir]'.
 
+		array{dict} GetFolderListing(dict filter)
+
+			Returns a dictionary containing information about
+			the current folder content.
+
+			The following keys are defined:
+
+				string Name : Folder name
+
+		array{object, dict} GetMessageListing(string folder,
+								dict filter)
+
+			Returns an array containing the messages found in the
+			given folder.
+
+			Each message is represented by an object path followed
+			by a dictionary of the properties.
+
+			Properties:
+
+				string Subject:
+
+					Message subject
+
+				string Timestamp:
+
+					Message timestamp
+
+				string Sender:
+
+					Message sender name
+
+				string SenderAddress:
+
+					Message sender address
+
+				string ReplyTo:
+
+					Message Reply-To address
+
+				string Recipient:
+
+					Message recipient name
+
+				string RecipientAddress:
+
+					Message recipient address
+
+				string Type:
+
+					Message type
+
+					Possible values: "EMAIL", "SMS_GSM",
+					"SMS_CDMA" and "MMS"
+
+				uint64 Size:
+
+					Message size in bytes
+
+				string Status:
+
+					Message reception status
+
+					Possible values: "complete",
+					"fractioned" and "notification"
+
+				boolean Priority:
+
+					Message priority flag
+
+				boolean Read:
+
+					Message read flag
+
+				boolean Sent:
+
+					Message sent flag
+
+				boolean Protected:
+
+					Message protected flag
+
+Message hierarchy
+=================
+
+Service		org.bluez.obex.client
+Interface	org.bluez.obex.Message
+Object path	[variable prefix]/{session0,session1,...}/{message0,...}
+
+Methods		object, dict Get(string targetfile)
+
+			Download message and store it in the target file.
+
+			If an empty target file is given, a temporary file
+			will be automatically generated.
+
+			The returned path represents the newly created transfer,
+			which should be used to find out if the content has been
+			successfully transferred or if the operation fails.
+
+			The properties of this transfer are also returned along
+			with the object path, to avoid a call to GetProperties.
+
 Transfer hierarchy
 ==================
 
 Service		org.bluez.obex.client
 Interface	org.bluez.obex.Transfer
-Object path	[variable prefix]/{transfer0,transfer1,...}
+Object path	[variable prefix]/{session0,session1,...}/{transfer0,...}
 
 Methods		dict GetProperties()
 

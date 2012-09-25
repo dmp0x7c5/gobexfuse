@@ -33,6 +33,7 @@
 #include <gdbus.h>
 
 #include <bluetooth/bluetooth.h>
+#include <gobex-apparam.h>
 
 #include "log.h"
 
@@ -71,18 +72,6 @@
 #define FORMAT_TAG		0X07
 #define PHONEBOOKSIZE_TAG	0X08
 #define NEWMISSEDCALLS_TAG	0X09
-
-/* The following length is in the unit of byte */
-#define ORDER_LEN		1
-#define SEARCHATTRIB_LEN	1
-#define MAXLISTCOUNT_LEN	2
-#define LISTSTARTOFFSET_LEN	2
-#define FILTER_LEN		8
-#define FORMAT_LEN		1
-#define PHONEBOOKSIZE_LEN	2
-#define NEWMISSEDCALLS_LEN	1
-
-#define get_be16(val)	GUINT16_FROM_BE(bt_get_unaligned((guint16 *) val))
 
 static const char *filter_list[] = {
 	"VERSION",
@@ -127,47 +116,12 @@ static const char *filter_list[] = {
 struct pbap_data {
 	struct obc_session *session;
 	char *path;
-	guint8 format;
-	guint8 order;
-	uint64_t filter;
 };
 
 struct pending_request {
 	struct pbap_data *pbap;
 	DBusMessage *msg;
 };
-
-struct pullphonebook_apparam {
-	uint8_t     filter_tag;
-	uint8_t     filter_len;
-	uint64_t    filter;
-	uint8_t     format_tag;
-	uint8_t     format_len;
-	uint8_t     format;
-	uint8_t     maxlistcount_tag;
-	uint8_t     maxlistcount_len;
-	uint16_t    maxlistcount;
-	uint8_t     liststartoffset_tag;
-	uint8_t     liststartoffset_len;
-	uint16_t    liststartoffset;
-} __attribute__ ((packed));
-
-struct pullvcardentry_apparam {
-        uint8_t     filter_tag;
-        uint8_t     filter_len;
-        uint64_t    filter;
-        uint8_t     format_tag;
-        uint8_t     format_len;
-        uint8_t     format;
-} __attribute__ ((packed));
-
-struct apparam_hdr {
-	uint8_t		tag;
-	uint8_t		len;
-	uint8_t		val[0];
-} __attribute__ ((packed));
-
-#define APPARAM_HDR_SIZE 2
 
 static DBusConnection *conn = NULL;
 
@@ -232,14 +186,14 @@ static gchar *build_phonebook_path(const char *location, const char *item)
 
 	if (!g_ascii_strcasecmp(location, "INT") ||
 			!g_ascii_strcasecmp(location, "INTERNAL"))
-		path = g_strdup("telecom");
+		path = g_strdup("/telecom");
 	else if (!g_ascii_strncasecmp(location, "SIM", 3)) {
 		if (strlen(location) == 3)
 			tmp = g_strdup("SIM1");
 		else
 			tmp = g_ascii_strup(location, 4);
 
-		path = g_build_filename(tmp, "telecom", NULL);
+		path = g_build_filename("/", tmp, "telecom", NULL);
 		g_free(tmp);
 	} else
 		return NULL;
@@ -295,48 +249,28 @@ static void pbap_setpath_cb(struct obc_session *session,
 static void read_return_apparam(struct obc_transfer *transfer,
 				guint16 *phone_book_size, guint8 *new_missed_calls)
 {
-	const struct apparam_hdr *hdr;
+	GObexApparam *apparam;
+	const guint8 *data;
 	size_t size;
 
 	*phone_book_size = 0;
 	*new_missed_calls = 0;
 
-	hdr = obc_transfer_get_params(transfer, &size);
-	if (hdr == NULL)
+	data = obc_transfer_get_params(transfer, &size);
+	if (data == NULL)
 		return;
 
-	if (size < APPARAM_HDR_SIZE)
+	apparam = g_obex_apparam_decode(data, size);
+	if (apparam == NULL)
 		return;
 
-	while (size > APPARAM_HDR_SIZE) {
-		if (hdr->len > size - APPARAM_HDR_SIZE) {
-			error("Unexpected PBAP pullphonebook app"
-					" length, tag %d, len %d",
-					hdr->tag, hdr->len);
-			return;
-		}
+	g_obex_apparam_get_uint16(apparam, PHONEBOOKSIZE_TAG,
+							phone_book_size);
+	g_obex_apparam_get_uint8(apparam, NEWMISSEDCALLS_TAG,
+							new_missed_calls);
 
-		switch (hdr->tag) {
-		case PHONEBOOKSIZE_TAG:
-			if (hdr->len == PHONEBOOKSIZE_LEN) {
-				guint16 val;
-				memcpy(&val, hdr->val, sizeof(val));
-				*phone_book_size = get_be16(&val);
-			}
-			break;
-		case NEWMISSEDCALLS_TAG:
-			if (hdr->len == NEWMISSEDCALLS_LEN)
-				*new_missed_calls = hdr->val[0];
-			break;
-		default:
-			error("Unexpected PBAP pullphonebook app"
-					" parameter, tag %d, len %d",
-					hdr->tag, hdr->len);
-		}
 
-		size -= APPARAM_HDR_SIZE + hdr->len;
-		hdr += APPARAM_HDR_SIZE + hdr->len;
-	}
+	g_obex_apparam_free(apparam);
 }
 
 static void phonebook_size_callback(struct obc_session *session,
@@ -414,165 +348,75 @@ send:
 	pending_request_free(request);
 }
 
-static struct obc_transfer *pull_phonebook(struct pbap_data *pbap,
-						DBusMessage *message,
-						guint8 type, const char *name,
-						const char *targetfile,
-						uint64_t filter, guint8 format,
-						guint16 maxlistcount,
-						guint16 liststartoffset,
-						GError **err)
+static GObexApparam *parse_format(GObexApparam *apparam, DBusMessageIter *iter)
 {
-	struct pending_request *request;
-	struct obc_transfer *transfer;
-	struct pullphonebook_apparam apparam;
-	session_callback_t func;
+	const char *string;
+	guint8 format;
 
-	transfer = obc_transfer_get("x-bt/phonebook", name, targetfile, err);
-	if (transfer == NULL)
+	if (dbus_message_iter_get_arg_type(iter) != DBUS_TYPE_STRING)
 		return NULL;
 
-	apparam.filter_tag = FILTER_TAG;
-	apparam.filter_len = FILTER_LEN;
-	apparam.filter = GUINT64_TO_BE(filter);
-	apparam.format_tag = FORMAT_TAG;
-	apparam.format_len = FORMAT_LEN;
-	apparam.format = format;
-	apparam.maxlistcount_tag = MAXLISTCOUNT_TAG;
-	apparam.maxlistcount_len = MAXLISTCOUNT_LEN;
-	apparam.maxlistcount = GUINT16_TO_BE(maxlistcount);
-	apparam.liststartoffset_tag = LISTSTARTOFFSET_TAG;
-	apparam.liststartoffset_len = LISTSTARTOFFSET_LEN;
-	apparam.liststartoffset = GUINT16_TO_BE(liststartoffset);
+	dbus_message_iter_get_basic(iter, &string);
 
-	switch (type) {
-	case PULLPHONEBOOK:
-		func = NULL;
-		request = NULL;
-		break;
-	case GETPHONEBOOKSIZE:
-		func = phonebook_size_callback;
-		request = pending_request_new(pbap, message);
-		break;
-	default:
-		error("Unexpected type : 0x%2x", type);
-		return NULL;
-	}
-
-	obc_transfer_set_params(transfer, &apparam, sizeof(apparam));
-
-	if (!obc_session_queue(pbap->session, transfer, func, request, err)) {
-		if (request != NULL)
-			pending_request_free(request);
-
-		return NULL;
-	}
-
-
-	return transfer;
-}
-
-static guint8 *fill_apparam(guint8 *dest, void *buf, guint8 tag, guint8 len)
-{
-	if (dest && buf) {
-		*dest++ = tag;
-		*dest++ = len;
-		memcpy(dest, buf, len);
-		dest += len;
-	}
-
-	return dest;
-}
-
-static DBusMessage *pull_vcard_listing(struct pbap_data *pbap,
-					DBusMessage *message, const char *name,
-					guint8 order, char *searchval, guint8 attrib,
-					guint16 count, guint16 offset)
-{
-	struct pending_request *request;
-	struct obc_transfer *transfer;
-	guint8 *p, apparam[272];
-	gint apparam_size;
-	GError *err = NULL;
-	DBusMessage *reply;
-
-	transfer = obc_transfer_get("x-bt/vcard-listing", name, NULL, &err);
-	if (transfer == NULL)
-		goto fail;
-
-	/* trunc the searchval string if it's length exceed the max value of guint8 */
-	if (strlen(searchval) > 254)
-		searchval[255] = '\0';
-
-	apparam_size = APPARAM_HDR_SIZE + ORDER_LEN +
-			(APPARAM_HDR_SIZE + strlen(searchval) + 1) +
-			(APPARAM_HDR_SIZE + SEARCHATTRIB_LEN) +
-			(APPARAM_HDR_SIZE + MAXLISTCOUNT_LEN) +
-			(APPARAM_HDR_SIZE + LISTSTARTOFFSET_LEN);
-
-	p = apparam;
-
-	p = fill_apparam(p, &order, ORDER_TAG, ORDER_LEN);
-	p = fill_apparam(p, searchval, SEARCHVALUE_TAG, strlen(searchval) + 1);
-	p = fill_apparam(p, &attrib, SEARCHATTRIB_TAG, SEARCHATTRIB_LEN);
-
-	count = GUINT16_TO_BE(count);
-	p = fill_apparam(p, &count, MAXLISTCOUNT_TAG, MAXLISTCOUNT_LEN);
-
-	offset = GUINT16_TO_BE(offset);
-	fill_apparam(p, &offset, LISTSTARTOFFSET_TAG, LISTSTARTOFFSET_LEN);
-
-	request = pending_request_new(pbap, message);
-
-	obc_transfer_set_params(transfer, apparam, apparam_size);
-
-	if (obc_session_queue(pbap->session, transfer,
-				pull_vcard_listing_callback, request, &err))
-		return NULL;
-
-	pending_request_free(request);
-
-fail:
-	reply = g_dbus_create_error(message, ERROR_INTERFACE ".Failed", "%s",
-								err->message);
-	g_error_free(err);
-	return reply;
-}
-
-static int set_format(struct pbap_data *pbap, const char *formatstr)
-{
-	if (!formatstr || g_str_equal(formatstr, "")) {
-		pbap->format = FORMAT_VCARD21;
-		return 0;
-	}
-
-	if (!g_ascii_strcasecmp(formatstr, "vcard21"))
-		pbap->format = FORMAT_VCARD21;
-	else if (!g_ascii_strcasecmp(formatstr, "vcard30"))
-		pbap->format = FORMAT_VCARD30;
+	if (!string || g_str_equal(string, ""))
+		format = FORMAT_VCARD21;
+	else if (!g_ascii_strcasecmp(string, "vcard21"))
+		format = FORMAT_VCARD21;
+	else if (!g_ascii_strcasecmp(string, "vcard30"))
+		format = FORMAT_VCARD30;
 	else
-		return -EINVAL;
+		return NULL;
 
-	return 0;
+	return g_obex_apparam_set_uint8(apparam, FORMAT_TAG, format);
 }
 
-static int set_order(struct pbap_data *pbap, const char *orderstr)
+static GObexApparam *parse_order(GObexApparam *apparam, DBusMessageIter *iter)
 {
-	if (!orderstr || g_str_equal(orderstr, "")) {
-		pbap->order = ORDER_INDEXED;
-		return 0;
-	}
+	const char *string;
+	guint8 order;
 
-	if (!g_ascii_strcasecmp(orderstr, "indexed"))
-		pbap->order = ORDER_INDEXED;
-	else if (!g_ascii_strcasecmp(orderstr, "alphanumeric"))
-		pbap->order = ORDER_ALPHANUMERIC;
-	else if (!g_ascii_strcasecmp(orderstr, "phonetic"))
-		pbap->order = ORDER_PHONETIC;
+	if (dbus_message_iter_get_arg_type(iter) != DBUS_TYPE_STRING)
+		return NULL;
+
+	dbus_message_iter_get_basic(iter, &string);
+
+	if (!string || g_str_equal(string, ""))
+		order = ORDER_INDEXED;
+	else if (!g_ascii_strcasecmp(string, "indexed"))
+		order = ORDER_INDEXED;
+	else if (!g_ascii_strcasecmp(string, "alphanumeric"))
+		order = ORDER_ALPHANUMERIC;
+	else if (!g_ascii_strcasecmp(string, "phonetic"))
+		order = ORDER_PHONETIC;
 	else
-		return -EINVAL;
+		return NULL;
 
-	return 0;
+	return g_obex_apparam_set_uint8(apparam, ORDER_TAG, order);
+}
+
+static GObexApparam *parse_offset(GObexApparam *apparam, DBusMessageIter *iter)
+{
+	guint16 num;
+
+	if (dbus_message_iter_get_arg_type(iter) != DBUS_TYPE_UINT16)
+		return NULL;
+
+	dbus_message_iter_get_basic(iter, &num);
+
+	return g_obex_apparam_set_uint16(apparam, LISTSTARTOFFSET_TAG, num);
+}
+
+static GObexApparam *parse_max_count(GObexApparam *apparam,
+							DBusMessageIter *iter)
+{
+	guint16 num;
+
+	if (dbus_message_iter_get_arg_type(iter) != DBUS_TYPE_UINT16)
+		return NULL;
+
+	dbus_message_iter_get_basic(iter, &num);
+
+	return g_obex_apparam_set_uint16(apparam, MAXLISTCOUNT_TAG, num);
 }
 
 static uint64_t get_filter_mask(const char *filterstr)
@@ -600,53 +444,180 @@ static uint64_t get_filter_mask(const char *filterstr)
 		return 0;
 }
 
-static int add_filter(struct pbap_data *pbap, const char *filterstr)
+static int set_field(guint64 *filter, const char *filterstr)
 {
-	uint64_t mask;
+	guint64 mask;
 
 	mask = get_filter_mask(filterstr);
 
 	if (mask == 0)
 		return -EINVAL;
 
-	pbap->filter |= mask;
+	*filter |= mask;
 	return 0;
 }
 
-static int remove_filter(struct pbap_data *pbap, const char *filterstr)
+static GObexApparam *parse_fields(GObexApparam *apparam, DBusMessageIter *iter)
 {
-	uint64_t mask;
+	DBusMessageIter array;
+	guint64 filter = 0;
 
-	mask = get_filter_mask(filterstr);
+	if (dbus_message_iter_get_arg_type(iter) != DBUS_TYPE_ARRAY)
+		return NULL;
 
-	if (mask == 0)
-		return -EINVAL;
+	dbus_message_iter_recurse(iter, &array);
 
-	pbap->filter &= ~mask;
-	return 0;
+	while (dbus_message_iter_get_arg_type(&array) == DBUS_TYPE_STRING) {
+		const char *string;
+
+		dbus_message_iter_get_basic(&array, &string);
+
+		if (set_field(&filter, string) < 0)
+			return NULL;
+
+		dbus_message_iter_next(&array);
+	}
+
+	return g_obex_apparam_set_uint64(apparam, FILTER_TAG, filter);
 }
 
-static gchar **get_filter_strs(uint64_t filter, gint *size)
+static GObexApparam *parse_filters(GObexApparam *apparam,
+							DBusMessageIter *iter)
 {
-	gchar **list, **item;
-	gint i;
-	gint filter_list_size = sizeof(filter_list) / sizeof(filter_list[0]) - 1;
+	DBusMessageIter array;
 
-	list = g_malloc0(sizeof(gchar **) * (FILTER_BIT_MAX + 2));
+	if (dbus_message_iter_get_arg_type(iter) != DBUS_TYPE_ARRAY)
+		return NULL;
 
-	item = list;
+	dbus_message_iter_recurse(iter, &array);
 
-	for (i = 0; i < filter_list_size; i++)
-		if (filter & (1ULL << i))
-			*(item++) = g_strdup(filter_list[i]);
+	while (dbus_message_iter_get_arg_type(&array) == DBUS_TYPE_DICT_ENTRY) {
+		const char *key;
+		DBusMessageIter value, entry;
 
-	for (i = filter_list_size; i <= FILTER_BIT_MAX; i++)
-		if (filter & (1ULL << i))
-			*(item++) = g_strdup_printf("%s%d", "BIT", i);
+		dbus_message_iter_recurse(&array, &entry);
+		dbus_message_iter_get_basic(&entry, &key);
 
-	*item = NULL;
-	*size = item - list;
-	return list;
+		dbus_message_iter_next(&entry);
+		dbus_message_iter_recurse(&entry, &value);
+
+		if (strcasecmp(key, "Format") == 0) {
+			if (parse_format(apparam, &value) == NULL)
+				return NULL;
+		} else if (strcasecmp(key, "Order") == 0) {
+			if (parse_order(apparam, &value) == NULL)
+				return NULL;
+		} else if (strcasecmp(key, "Offset") == 0) {
+			if (parse_offset(apparam, &value) == NULL)
+				return NULL;
+		} else if (strcasecmp(key, "MaxCount") == 0) {
+			if (parse_max_count(apparam, &value) == NULL)
+				return NULL;
+		} else if (strcasecmp(key, "Fields") == 0) {
+			if (parse_fields(apparam, &value) == NULL)
+				return NULL;
+		}
+
+		dbus_message_iter_next(&array);
+	}
+
+	return apparam;
+}
+
+static DBusMessage *pull_phonebook(struct pbap_data *pbap,
+						DBusMessage *message,
+						guint8 type,
+						const char *targetfile,
+						GObexApparam *apparam)
+{
+	struct pending_request *request;
+	struct obc_transfer *transfer;
+	char *name;
+	guint8 buf[32];
+	gsize len;
+	session_callback_t func;
+	DBusMessage *reply;
+	GError *err = NULL;
+
+	name = g_strconcat(pbap->path, ".vcf", NULL);
+
+	len = g_obex_apparam_encode(apparam, buf, sizeof(buf));
+	g_obex_apparam_free(apparam);
+
+	transfer = obc_transfer_get("x-bt/phonebook", name, targetfile, &err);
+	if (transfer == NULL)
+		goto fail;
+
+	switch (type) {
+	case PULLPHONEBOOK:
+		func = NULL;
+		request = NULL;
+		break;
+	case GETPHONEBOOKSIZE:
+		func = phonebook_size_callback;
+		request = pending_request_new(pbap, message);
+		break;
+	default:
+		error("Unexpected type : 0x%2x", type);
+		return NULL;
+	}
+
+	obc_transfer_set_params(transfer, buf, len);
+
+	if (!obc_session_queue(pbap->session, transfer, func, request, &err)) {
+		if (request != NULL)
+			pending_request_free(request);
+
+		goto fail;
+	}
+
+	g_free(name);
+
+	if (targetfile == NULL)
+		return NULL;
+
+	return obc_transfer_create_dbus_reply(transfer, message);
+
+fail:
+	g_free(name);
+	reply = g_dbus_create_error(message, ERROR_INTERFACE ".Failed", "%s",
+								err->message);
+	g_error_free(err);
+	return reply;
+}
+
+static DBusMessage *pull_vcard_listing(struct pbap_data *pbap,
+					DBusMessage *message, const char *name,
+					GObexApparam *apparam)
+{
+	struct pending_request *request;
+	struct obc_transfer *transfer;
+	guint8 buf[272];
+	gsize len;
+	GError *err = NULL;
+	DBusMessage *reply;
+
+	len = g_obex_apparam_encode(apparam, buf, sizeof(buf));
+	g_obex_apparam_free(apparam);
+
+	transfer = obc_transfer_get("x-bt/vcard-listing", name, NULL, &err);
+	if (transfer == NULL)
+		goto fail;
+
+	obc_transfer_set_params(transfer, buf, len);
+
+	request = pending_request_new(pbap, message);
+	if (obc_session_queue(pbap->session, transfer,
+				pull_vcard_listing_callback, request, &err))
+		return NULL;
+
+	pending_request_free(request);
+
+fail:
+	reply = g_dbus_create_error(message, ERROR_INTERFACE ".Failed", "%s",
+								err->message);
+	g_error_free(err);
+	return reply;
 }
 
 static DBusMessage *pbap_select(DBusConnection *connection,
@@ -700,74 +671,57 @@ static DBusMessage *pbap_pull_all(DBusConnection *connection,
 					DBusMessage *message, void *user_data)
 {
 	struct pbap_data *pbap = user_data;
-	struct obc_transfer *transfer;
 	const char *targetfile;
-	char *name;
-	GError *err = NULL;
+	GObexApparam *apparam;
+	DBusMessageIter args;
 
 	if (!pbap->path)
 		return g_dbus_create_error(message,
 					ERROR_INTERFACE ".Forbidden",
 					"Call Select first of all");
 
-	if (dbus_message_get_args(message, NULL,
-			DBUS_TYPE_STRING, &targetfile,
-			DBUS_TYPE_INVALID) == FALSE)
+	dbus_message_iter_init(message, &args);
+
+	if (dbus_message_iter_get_arg_type(&args) != DBUS_TYPE_STRING)
 		return g_dbus_create_error(message,
 				ERROR_INTERFACE ".InvalidArguments", NULL);
 
-	name = g_strconcat(pbap->path, ".vcf", NULL);
+	dbus_message_iter_get_basic(&args, &targetfile);
+	dbus_message_iter_next(&args);
 
-	transfer = pull_phonebook(pbap, message, PULLPHONEBOOK, name,
-				targetfile, pbap->filter, pbap->format,
-				DEFAULT_COUNT, DEFAULT_OFFSET, &err);
-	g_free(name);
+	apparam = g_obex_apparam_set_uint16(NULL, MAXLISTCOUNT_TAG,
+							DEFAULT_COUNT);
+	apparam = g_obex_apparam_set_uint16(apparam, LISTSTARTOFFSET_TAG,
+							DEFAULT_OFFSET);
 
-	if (transfer == NULL) {
-		DBusMessage *reply = g_dbus_create_error(message,
-					ERROR_INTERFACE ".Failed", "%s",
-					err->message);
-		g_error_free(err);
-		return reply;
+	if (parse_filters(apparam, &args) == NULL) {
+		g_obex_apparam_free(apparam);
+		return g_dbus_create_error(message,
+				ERROR_INTERFACE ".InvalidArguments", NULL);
 	}
 
-	return obc_transfer_create_dbus_reply(transfer, message);
+	return pull_phonebook(pbap, message, PULLPHONEBOOK, targetfile,
+								apparam);
 }
 
-static DBusMessage *pbap_pull_vcard(DBusConnection *connection,
-					DBusMessage *message, void *user_data)
+static DBusMessage *pull_vcard(struct pbap_data *pbap, DBusMessage *message,
+				const char *name, const char *targetfile,
+				GObexApparam *apparam)
 {
-	struct pbap_data *pbap = user_data;
 	struct obc_transfer *transfer;
-	struct pullvcardentry_apparam apparam;
-	const char *name, *targetfile;
 	DBusMessage *reply;
 	GError *err = NULL;
+	guint8 buf[32];
+	gsize len;
 
-	if (!pbap->path)
-		return g_dbus_create_error(message,
-				ERROR_INTERFACE ".Forbidden",
-				"Call Select first of all");
-
-	if (dbus_message_get_args(message, NULL,
-			DBUS_TYPE_STRING, &name,
-			DBUS_TYPE_STRING, &targetfile,
-			DBUS_TYPE_INVALID) == FALSE)
-		return g_dbus_create_error(message,
-				ERROR_INTERFACE ".InvalidArguments", NULL);
+	len = g_obex_apparam_encode(apparam, buf, sizeof(buf));
+	g_obex_apparam_free(apparam);
 
 	transfer = obc_transfer_get("x-bt/vcard", name, targetfile, &err);
 	if (transfer == NULL)
 		goto fail;
 
-	apparam.filter_tag = FILTER_TAG;
-	apparam.filter_len = FILTER_LEN;
-	apparam.filter = GUINT64_TO_BE(pbap->filter);
-	apparam.format_tag = FORMAT_TAG;
-	apparam.format_len = FORMAT_LEN;
-	apparam.format = pbap->format;
-
-	obc_transfer_set_params(transfer, &apparam, sizeof(apparam));
+	obc_transfer_set_params(transfer, buf, len);
 
 	if (!obc_session_queue(pbap->session, transfer, NULL, NULL, &err))
 		goto fail;
@@ -781,38 +735,80 @@ fail:
 	return reply;
 }
 
+static DBusMessage *pbap_pull_vcard(DBusConnection *connection,
+					DBusMessage *message, void *user_data)
+{
+	struct pbap_data *pbap = user_data;
+	GObexApparam *apparam;
+	const char *name, *targetfile;
+	DBusMessageIter args;
+
+	if (!pbap->path)
+		return g_dbus_create_error(message,
+				ERROR_INTERFACE ".Forbidden",
+				"Call Select first of all");
+
+	dbus_message_iter_init(message, &args);
+
+	if (dbus_message_iter_get_arg_type(&args) != DBUS_TYPE_STRING)
+		return g_dbus_create_error(message,
+				ERROR_INTERFACE ".InvalidArguments", NULL);
+
+	dbus_message_iter_get_basic(&args, &name);
+	dbus_message_iter_next(&args);
+
+	if (dbus_message_iter_get_arg_type(&args) != DBUS_TYPE_STRING)
+		return g_dbus_create_error(message,
+				ERROR_INTERFACE ".InvalidArguments", NULL);
+
+	dbus_message_iter_get_basic(&args, &targetfile);
+	dbus_message_iter_next(&args);
+
+	apparam = g_obex_apparam_set_uint16(NULL, MAXLISTCOUNT_TAG,
+							DEFAULT_COUNT);
+	apparam = g_obex_apparam_set_uint16(apparam, LISTSTARTOFFSET_TAG,
+							DEFAULT_OFFSET);
+
+	if (parse_filters(apparam, &args) == NULL) {
+		g_obex_apparam_free(apparam);
+		return g_dbus_create_error(message,
+				ERROR_INTERFACE ".InvalidArguments", NULL);
+	}
+
+	return pull_vcard(pbap, message, name, targetfile, apparam);
+}
+
 static DBusMessage *pbap_list(DBusConnection *connection,
 					DBusMessage *message, void *user_data)
 {
 	struct pbap_data *pbap = user_data;
+	GObexApparam *apparam;
+	DBusMessageIter args;
 
 	if (!pbap->path)
 		return g_dbus_create_error(message,
 					ERROR_INTERFACE ".Forbidden",
 					"Call Select first of all");
 
-	return pull_vcard_listing(pbap, message, "", pbap->order, "",
-				ATTRIB_NAME, DEFAULT_COUNT, DEFAULT_OFFSET);
-}
+	dbus_message_iter_init(message, &args);
 
-static DBusMessage *pbap_search(DBusConnection *connection,
-					DBusMessage *message, void *user_data)
-{
-	struct pbap_data *pbap = user_data;
-	char *field, *value;
-	guint8 attrib;
+	apparam = g_obex_apparam_set_uint16(NULL, MAXLISTCOUNT_TAG,
+							DEFAULT_COUNT);
+	apparam = g_obex_apparam_set_uint16(apparam, LISTSTARTOFFSET_TAG,
+							DEFAULT_OFFSET);
 
-	if (dbus_message_get_args(message, NULL,
-			DBUS_TYPE_STRING, &field,
-			DBUS_TYPE_STRING, &value,
-			DBUS_TYPE_INVALID) == FALSE)
+	if (parse_filters(apparam, &args) == NULL) {
+		g_obex_apparam_free(apparam);
 		return g_dbus_create_error(message,
 				ERROR_INTERFACE ".InvalidArguments", NULL);
+	}
 
-	if (!pbap->path)
-		return g_dbus_create_error(message,
-					ERROR_INTERFACE ".Forbidden",
-					"Call Select first of all");
+	return pull_vcard_listing(pbap, message, "", apparam);
+}
+
+static GObexApparam *parse_attribute(GObexApparam *apparam, const char *field)
+{
+	guint8 attrib;
 
 	if (!field || g_str_equal(field, ""))
 		attrib = ATTRIB_NAME;
@@ -823,133 +819,101 @@ static DBusMessage *pbap_search(DBusConnection *connection,
 	else if (!g_ascii_strcasecmp(field, "sound"))
 		attrib = ATTRIB_SOUND;
 	else
-		return g_dbus_create_error(message,
-				ERROR_INTERFACE ".InvalidArguments", NULL);
+		return NULL;
 
-	return pull_vcard_listing(pbap, message, "", pbap->order, value,
-					attrib, DEFAULT_COUNT, DEFAULT_OFFSET);
+	return g_obex_apparam_set_uint8(apparam, SEARCHATTRIB_TAG, attrib);
 }
 
-static DBusMessage *pbap_get_size(DBusConnection *connection,
+static DBusMessage *pbap_search(DBusConnection *connection,
 					DBusMessage *message, void *user_data)
 {
 	struct pbap_data *pbap = user_data;
-	DBusMessage *reply;
-	struct obc_transfer *transfer;
-	char *name;
-	GError *err = NULL;
+	char *field, *value;
+	GObexApparam *apparam;
+	DBusMessageIter args;
 
 	if (!pbap->path)
 		return g_dbus_create_error(message,
 					ERROR_INTERFACE ".Forbidden",
 					"Call Select first of all");
 
-	name = g_strconcat(pbap->path, ".vcf", NULL);
+	dbus_message_iter_init(message, &args);
 
-	transfer = pull_phonebook(pbap, message, GETPHONEBOOKSIZE, name, NULL,
-				pbap->filter, pbap->format, 0,
-				DEFAULT_OFFSET, &err);
-
-	g_free(name);
-
-	if (transfer != NULL)
-		return NULL;
-
-	reply = g_dbus_create_error(message, ERROR_INTERFACE ".Failed", "%s",
-								err->message);
-	g_error_free(err);
-	return reply;
-}
-
-static DBusMessage *pbap_set_format(DBusConnection *connection,
-					DBusMessage *message, void *user_data)
-{
-	struct pbap_data *pbap = user_data;
-	const char *format;
-
-	if (dbus_message_get_args(message, NULL,
-			DBUS_TYPE_STRING, &format,
-			DBUS_TYPE_INVALID) == FALSE)
+	if (dbus_message_iter_get_arg_type(&args) != DBUS_TYPE_STRING)
 		return g_dbus_create_error(message,
 				ERROR_INTERFACE ".InvalidArguments", NULL);
 
-	if (set_format(pbap, format) < 0)
-		return g_dbus_create_error(message,
-					ERROR_INTERFACE ".InvalidArguments",
-					"InvalidFormat");
+	dbus_message_iter_get_basic(&args, &field);
+	dbus_message_iter_next(&args);
 
-	return dbus_message_new_method_return(message);
-}
-
-static DBusMessage *pbap_set_order(DBusConnection *connection,
-					DBusMessage *message, void *user_data)
-{
-	struct pbap_data *pbap = user_data;
-	const char *order;
-
-	if (dbus_message_get_args(message, NULL,
-			DBUS_TYPE_STRING, &order,
-			DBUS_TYPE_INVALID) == FALSE)
+	apparam = parse_attribute(NULL, field);
+	if (apparam == NULL)
 		return g_dbus_create_error(message,
 				ERROR_INTERFACE ".InvalidArguments", NULL);
 
-	if (set_order(pbap, order) < 0)
-		return g_dbus_create_error(message,
-					ERROR_INTERFACE ".InvalidArguments",
-					"InvalidFilter");
-
-	return dbus_message_new_method_return(message);
-}
-
-static DBusMessage *pbap_set_filter(DBusConnection *connection,
-					DBusMessage *message, void *user_data)
-{
-	struct pbap_data *pbap = user_data;
-	char **filters, **item;
-	gint size;
-	uint64_t oldfilter = pbap->filter;
-
-	if (dbus_message_get_args(message, NULL, DBUS_TYPE_ARRAY,
-			DBUS_TYPE_STRING, &filters, &size,
-			DBUS_TYPE_INVALID) == FALSE)
+	if (dbus_message_iter_get_arg_type(&args) != DBUS_TYPE_STRING)
 		return g_dbus_create_error(message,
 				ERROR_INTERFACE ".InvalidArguments", NULL);
 
-	remove_filter(pbap, "ALL");
-	if (size == 0)
-		goto done;
+	dbus_message_iter_get_basic(&args, &value);
+	dbus_message_iter_next(&args);
 
-	for (item = filters; *item; item++) {
-		if (add_filter(pbap, *item) < 0) {
-			pbap->filter = oldfilter;
-			g_strfreev(filters);
-			return g_dbus_create_error(message,
-					ERROR_INTERFACE ".InvalidArguments",
-					"InvalidFilters");
-		}
+	apparam = g_obex_apparam_set_uint16(apparam, MAXLISTCOUNT_TAG,
+							DEFAULT_COUNT);
+	apparam = g_obex_apparam_set_uint16(apparam, LISTSTARTOFFSET_TAG,
+							DEFAULT_OFFSET);
+	apparam = g_obex_apparam_set_string(apparam, SEARCHVALUE_TAG, value);
+
+	if (parse_filters(apparam, &args) == NULL) {
+		g_obex_apparam_free(apparam);
+		return g_dbus_create_error(message,
+				ERROR_INTERFACE ".InvalidArguments", NULL);
 	}
 
-done:
-	g_strfreev(filters);
-	return dbus_message_new_method_return(message);
+	return pull_vcard_listing(pbap, message, "", apparam);
 }
 
-static DBusMessage *pbap_get_filter(DBusConnection *connection,
+static DBusMessage *pbap_get_size(DBusConnection *connection,
 					DBusMessage *message, void *user_data)
 {
 	struct pbap_data *pbap = user_data;
-	gchar **filters = NULL;
-	gint size;
-	DBusMessage *reply;
+	GObexApparam *apparam;
+	DBusMessageIter args;
 
-	filters = get_filter_strs(pbap->filter, &size);
-	reply = dbus_message_new_method_return(message);
-	dbus_message_append_args(reply, DBUS_TYPE_ARRAY,
-				DBUS_TYPE_STRING, &filters, size,
-				DBUS_TYPE_INVALID);
+	if (!pbap->path)
+		return g_dbus_create_error(message,
+					ERROR_INTERFACE ".Forbidden",
+					"Call Select first of all");
 
-	g_strfreev(filters);
-	return reply;
+	dbus_message_iter_init(message, &args);
+
+	apparam = g_obex_apparam_set_uint16(NULL, MAXLISTCOUNT_TAG, 0);
+	apparam = g_obex_apparam_set_uint16(apparam, LISTSTARTOFFSET_TAG,
+							DEFAULT_OFFSET);
+
+	return pull_phonebook(pbap, message, GETPHONEBOOKSIZE, NULL, apparam);
+}
+
+static gchar **get_filter_strs(uint64_t filter, gint *size)
+{
+	gchar **list, **item;
+	gint i;
+
+	list = g_malloc0(sizeof(gchar **) * (FILTER_BIT_MAX + 2));
+
+	item = list;
+
+	for (i = 0; filter_list[i] != NULL; i++)
+		if (filter & (1ULL << i))
+			*(item++) = g_strdup(filter_list[i]);
+
+	for (; i <= FILTER_BIT_MAX; i++)
+		if (filter & (1ULL << i))
+			*(item++) = g_strdup_printf("%s%d", "BIT", i);
+
+	*item = NULL;
+	*size = item - list;
+	return list;
 }
 
 static DBusMessage *pbap_list_filter_fields(DBusConnection *connection,
@@ -974,37 +938,29 @@ static const GDBusMethodTable pbap_methods[] = {
 			GDBUS_ARGS({ "location", "s" }, { "phonebook", "s" }),
 			NULL, pbap_select) },
 	{ GDBUS_METHOD("PullAll",
-			GDBUS_ARGS({ "targetfile", "s" }),
+			GDBUS_ARGS({ "targetfile", "s" },
+					{ "filters", "a{sv}" }),
 			GDBUS_ARGS({ "transfer", "o" },
 					{ "properties", "a{sv}" }),
 			pbap_pull_all) },
 	{ GDBUS_METHOD("Pull",
-			GDBUS_ARGS({ "vcard", "s" }, { "targetfile", "s" }),
+			GDBUS_ARGS({ "vcard", "s" }, { "targetfile", "s" },
+					{ "filters", "a{sv}" }),
 			GDBUS_ARGS({ "transfer", "o" },
 					{ "properties", "a{sv}" }),
 			pbap_pull_vcard) },
 	{ GDBUS_ASYNC_METHOD("List",
-				NULL, GDBUS_ARGS({ "vcard_listing", "a(ss)" }),
-				pbap_list) },
+			GDBUS_ARGS({ "filters", "a{sv}" }),
+			GDBUS_ARGS({ "vcard_listing", "a(ss)" }),
+			pbap_list) },
 	{ GDBUS_ASYNC_METHOD("Search",
-				GDBUS_ARGS({ "field", "s" }, { "value", "s" }),
-				GDBUS_ARGS({ "vcard_listing", "a(ss)" }),
-				pbap_search) },
+			GDBUS_ARGS({ "field", "s" }, { "value", "s" },
+					{ "filters", "a{sv}" }),
+			GDBUS_ARGS({ "vcard_listing", "a(ss)" }),
+			pbap_search) },
 	{ GDBUS_ASYNC_METHOD("GetSize",
 				NULL, GDBUS_ARGS({ "size", "q" }),
 				pbap_get_size) },
-	{ GDBUS_METHOD("SetFormat",
-				GDBUS_ARGS({ "format", "s" }), NULL,
-				pbap_set_format) },
-	{ GDBUS_METHOD("SetOrder",
-				GDBUS_ARGS({ "order", "s" }), NULL,
-				pbap_set_order) },
-	{ GDBUS_METHOD("SetFilter",
-				GDBUS_ARGS({ "fields", "as" }), NULL,
-				pbap_set_filter) },
-	{ GDBUS_METHOD("GetFilter",
-				NULL, GDBUS_ARGS({ "fields", "as" }),
-				pbap_get_filter) },
 	{ GDBUS_METHOD("ListFilterFields",
 				NULL, GDBUS_ARGS({ "fields", "as" }),
 				pbap_list_filter_fields) },

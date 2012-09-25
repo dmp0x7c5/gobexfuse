@@ -26,13 +26,6 @@
 
 #include <glib.h>
 
-typedef enum {
-	BT_IO_ERROR_DISCONNECTED,
-	BT_IO_ERROR_CONNECT_FAILED,
-	BT_IO_ERROR_FAILED,
-	BT_IO_ERROR_INVALID_ARGS,
-} BtIOError;
-
 #define BT_IO_ERROR bt_io_error_quark()
 
 GQuark bt_io_error_quark(void);
@@ -51,6 +44,7 @@ typedef enum {
 	BT_IO_OPT_SOURCE_BDADDR,
 	BT_IO_OPT_DEST,
 	BT_IO_OPT_DEST_BDADDR,
+	BT_IO_OPT_DEST_TYPE,
 	BT_IO_OPT_DEFER_TIMEOUT,
 	BT_IO_OPT_SEC_LEVEL,
 	BT_IO_OPT_KEY_SIZE,

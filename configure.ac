@@ -1,5 +1,5 @@
 AC_PREREQ(2.60)
-AC_INIT(obexd, 0.46)
+AC_INIT(obexd, 0.47)
 
 AM_INIT_AUTOMAKE([foreign subdir-objects color-tests])
 AM_CONFIG_HEADER(config.h)
@@ -79,8 +79,8 @@ PKG_CHECK_MODULES(DBUS, dbus-1 >= 1.4, dummy=yes,
 AC_SUBST(DBUS_CFLAGS)
 AC_SUBST(DBUS_LIBS)
 
-PKG_CHECK_MODULES(BLUEZ, bluez >= 4.99, dummy=yes,
-				AC_MSG_ERROR(BlueZ >= 4.99 is required))
+PKG_CHECK_MODULES(BLUEZ, bluez >= 4.100, dummy=yes,
+				AC_MSG_ERROR(BlueZ >= 4.100 is required))
 AC_SUBST(BLUEZ_CFLAGS)
 AC_SUBST(BLUEZ_LIBS)
 

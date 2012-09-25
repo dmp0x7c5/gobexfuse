@@ -226,7 +226,7 @@ static void *irmc_connect(struct obex_session *os, int *err)
 	param->maxlistcount = 0; /* to count the number of vcards... */
 	param->filter = 0x200085; /* UID TEL N VERSION */
 	irmc->params = param;
-	irmc->request = phonebook_pull("telecom/pb.vcf", irmc->params,
+	irmc->request = phonebook_pull(PB_CONTACTS, irmc->params,
 					phonebook_size_result, irmc, err);
 	ret = phonebook_pull_read(irmc->request);
 	if (err)
@@ -281,7 +281,7 @@ static int irmc_chkput(struct obex_session *os, void *user_data)
 	return -EBADR;
 }
 
-static void *irmc_open_devinfo(struct irmc_session *irmc, int *err)
+static int irmc_open_devinfo(struct irmc_session *irmc)
 {
 	if (!irmc->buffer)
 		irmc->buffer = g_string_new("");
@@ -301,93 +301,56 @@ static void *irmc_open_devinfo(struct irmc_session *irmc, int *err)
 				"NOTE-TYPE-RX:NONE\r\n",
 				irmc->manu, irmc->model, irmc->sn);
 
-	return irmc;
+	return 0;
 }
 
-static void *irmc_open_pb(const char *name, struct irmc_session *irmc,
-								int *err)
+static int irmc_open_pb(struct irmc_session *irmc)
 {
-	GString *mybuf;
 	int ret;
 
-	if (!g_strcmp0(name, ".vcf")) {
-		/* how can we tell if the vcard count call already finished? */
-		irmc->request = phonebook_pull("telecom/pb.vcf", irmc->params,
+	/* how can we tell if the vcard count call already finished? */
+	irmc->request = phonebook_pull(PB_CONTACTS, irmc->params,
 						query_result, irmc, &ret);
-		if (ret < 0) {
-			DBG("phonebook_pull failed...");
-			goto fail;
-		}
-
-		ret = phonebook_pull_read(irmc->request);
-		if (ret < 0) {
-			DBG("phonebook_pull_read failed...");
-			goto fail;
-		}
-
-		return irmc;
+	if (ret < 0) {
+		DBG("phonebook_pull failed...");
+		return ret;
 	}
 
-	if (!g_strcmp0(name, "/info.log")) {
-		mybuf = g_string_new("");
-		g_string_printf(mybuf, "Total-Records:%d\r\n"
+	ret = phonebook_pull_read(irmc->request);
+	if (ret < 0) {
+		DBG("phonebook_pull_read failed...");
+		return ret;
+	}
+
+	return 0;
+}
+
+static int irmc_open_info(struct irmc_session *irmc)
+{
+	if (irmc->buffer == NULL)
+		irmc->buffer = g_string_new("");
+
+	g_string_printf(irmc->buffer, "Total-Records:%d\r\n"
 				"Maximum-Records:%d\r\n"
 				"IEL:2\r\n"
 				"DID:%s\r\n",
 				irmc->params->maxlistcount,
 				irmc->params->maxlistcount, irmc->did);
-	} else if (!strncmp(name, "/luid/", 6)) {
-		name += 6;
-		if (!g_strcmp0(name, "cc.log")) {
-			mybuf = g_string_new("");
-			g_string_printf(mybuf, "%d\r\n",
-						irmc->params->maxlistcount);
-		} else {
-			int l = strlen(name);
-			/* FIXME:
-			 * Reply the same to any *.log so we hopefully force a
-			 * full phonebook dump.
-			 * Is IEL:2 ok?
-			 */
-			if (l > 4 && !g_strcmp0(name + l - 4, ".log")) {
-				DBG("changelog request, force whole book");
-				mybuf = g_string_new("");
-				g_string_printf(mybuf, "SN:%s\r\n"
-							"DID:%s\r\n"
-							"Total-Records:%d\r\n"
-							"Maximum-Records:%d\r\n"
-							"*\r\n",
-						irmc->sn, irmc->did,
-						irmc->params->maxlistcount,
-						irmc->params->maxlistcount);
-			} else {
-				ret = -EBADR;
-				goto fail;
-			}
-		}
-	} else {
-		ret = -EBADR;
-		goto fail;
-	}
 
-	if (!irmc->buffer)
-		irmc->buffer = mybuf;
-	else {
-		irmc->buffer = g_string_append(irmc->buffer, mybuf->str);
-		g_string_free(mybuf, TRUE);
-	}
-
-	return irmc;
-
-fail:
-	if (err)
-		*err = ret;
-
-	return NULL;
+	return 0;
 }
 
-static void *irmc_open_cal(const char *name, struct irmc_session *irmc,
-								int *err)
+static int irmc_open_cc(struct irmc_session *irmc)
+{
+	if (irmc->buffer == NULL)
+		irmc->buffer = g_string_new("");
+
+	g_string_printf(irmc->buffer, "%d\r\n", irmc->params->maxlistcount);
+
+	return 0;
+}
+
+static int irmc_open_cal(struct irmc_session *irmc)
 {
 	/* no suport yet. Just return an empty buffer. cal.vcs */
 	DBG("unsupported, returning empty buffer");
@@ -395,11 +358,10 @@ static void *irmc_open_cal(const char *name, struct irmc_session *irmc,
 	if (!irmc->buffer)
 		irmc->buffer = g_string_new("");
 
-	return irmc;
+	return 0;
 }
 
-static void *irmc_open_nt(const char *name, struct irmc_session *irmc,
-								int *err)
+static int irmc_open_nt(struct irmc_session *irmc)
 {
 	/* no suport yet. Just return an empty buffer. nt.vnt */
 	DBG("unsupported, returning empty buffer");
@@ -407,7 +369,25 @@ static void *irmc_open_nt(const char *name, struct irmc_session *irmc,
 	if (!irmc->buffer)
 		irmc->buffer = g_string_new("");
 
-	return irmc;
+	return 0;
+}
+
+static int irmc_open_luid(struct irmc_session *irmc)
+{
+	if (irmc->buffer == NULL)
+		irmc->buffer = g_string_new("");
+
+	DBG("changelog request, force whole book");
+	g_string_printf(irmc->buffer, "SN:%s\r\n"
+					"DID:%s\r\n"
+					"Total-Records:%d\r\n"
+					"Maximum-Records:%d\r\n"
+					"*\r\n",
+					irmc->sn, irmc->did,
+					irmc->params->maxlistcount,
+					irmc->params->maxlistcount);
+
+	return 0;
 }
 
 static void *irmc_open(const char *name, int oflag, mode_t mode, void *context,
@@ -415,7 +395,7 @@ static void *irmc_open(const char *name, int oflag, mode_t mode, void *context,
 {
 	struct irmc_session *irmc = context;
 	int ret = 0;
-	const char *p;
+	char *path;
 
 	DBG("name %s context %p", name, context);
 
@@ -423,20 +403,39 @@ static void *irmc_open(const char *name, int oflag, mode_t mode, void *context,
 		ret = -EPERM;
 		goto fail;
 	}
-	if (name == NULL || strncmp(name, "telecom/", 8) != 0) {
+
+	if (name == NULL) {
 		ret = -EBADR;
 		goto fail;
 	}
 
-	p = name + 8;
-	if (!g_strcmp0(p, "devinfo.txt"))
-		return irmc_open_devinfo(irmc, err);
-	else if (!strncmp(p, "pb", 2))
-		return irmc_open_pb(p+2, irmc, err);
-	else if (!strncmp(p, "cal", 3))
-		return irmc_open_cal(p+3, irmc, err);
-	else if (!strncmp(p, "nt", 2))
-		return irmc_open_nt(p+2, irmc, err);
+	/* Always contains the absolute path */
+	if (g_path_is_absolute(name))
+		path = g_strdup(name);
+	else
+		path = g_build_filename("/", name, NULL);
+
+	if (g_str_equal(path, PB_DEVINFO))
+		ret = irmc_open_devinfo(irmc);
+	else if (g_str_equal(path, PB_CONTACTS))
+		ret = irmc_open_pb(irmc);
+	else if (g_str_equal(path, PB_INFO_LOG))
+		ret = irmc_open_info(irmc);
+	else if (g_str_equal(path, PB_CC_LOG))
+		ret = irmc_open_cc(irmc);
+	else if (g_str_has_prefix(path, PB_CALENDAR_FOLDER))
+		ret = irmc_open_cal(irmc);
+	else if (g_str_has_prefix(path, PB_NOTES_FOLDER))
+		ret = irmc_open_nt(irmc);
+	else if (g_str_has_prefix(path, PB_LUID_FOLDER))
+		ret = irmc_open_luid(irmc);
+	else
+		ret = -EBADR;
+
+	g_free(path);
+
+	if (ret == 0)
+		return irmc;
 
 fail:
 	if (err)

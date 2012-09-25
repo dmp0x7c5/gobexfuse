@@ -303,9 +303,9 @@ int messages_get_folder_listing(void *s, const char *name,
 	return 0;
 }
 
-int messages_get_messages_listing(void *session,
-				const char *name,
+int messages_get_messages_listing(void *session, const char *name,
 				uint16_t max, uint16_t offset,
+				uint8_t subject_len,
 				const struct messages_filter *filter,
 				messages_get_messages_listing_cb callback,
 				void *user_data)
@@ -323,6 +323,19 @@ int messages_get_message(void *session, const char *handle,
 
 int messages_update_inbox(void *session, messages_update_inbox_cb callback,
 							void *user_data)
+{
+	return -ENOSYS;
+}
+
+int messages_set_read(void *session, const char *handle, uint8_t value,
+				messages_set_read_cb callback, void *user_data)
+{
+	return -ENOSYS;
+}
+
+int messages_set_delete(void *session, const char *handle, uint8_t value,
+					messages_set_delete_cb callback,
+					void *user_data)
 {
 	return -ENOSYS;
 }
