@@ -724,3 +724,23 @@ void gobexhlp_delete(struct gobexhlp_session* session, const char *path)
 	request_wait_free(session);
 }
 
+void gobexhlp_move(struct gobexhlp_session* session, const char *oldpath,
+						const char* newpath)
+{
+	struct gobexhlp_location *l_from, *l_to;
+
+	l_to = get_location(newpath);
+	l_from = get_location(oldpath);
+	gobexhlp_setpath(session, l_from->dir);
+
+	g_print("gobexhlp_move(%s to %s)\n", l_from->file, l_to->file);
+
+	request_new(session, g_strdup_printf("move %s:%s",
+					oldpath, newpath));
+	g_obex_move(session->obex, l_from->file, l_to->file, response_func,
+						session, &session->err);
+	free_location(l_to);
+	free_location(l_from);
+	request_wait_free(session);
+}
+

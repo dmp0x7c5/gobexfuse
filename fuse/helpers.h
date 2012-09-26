@@ -50,9 +50,12 @@ struct gobexhlp_session {
 struct gobexhlp_session* gobexhlp_connect(const char *srcstr,
 						const char *dstsrc);
 void gobexhlp_disconnect(struct gobexhlp_session* session);
+
 void gobexhlp_mkdir(struct gobexhlp_session* session, const char *path);
 void gobexhlp_touch(struct gobexhlp_session* session, const char *path);
 void gobexhlp_delete(struct gobexhlp_session* session, const char *path);
+void gobexhlp_move(struct gobexhlp_session* session, const char *oldpath,
+					const char* newpath);
 void gobexhlp_put(struct gobexhlp_session* session,
 					struct gobexhlp_buffer *buffer,
 					const char *path);
