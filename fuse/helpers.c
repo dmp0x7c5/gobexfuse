@@ -56,6 +56,7 @@ struct gobexhlp_location {
 	gchar *file;
 };
 
+void gobexhlp_setpath(struct gobexhlp_session* session, const char *path);
 void gobexhlp_touch_real(struct gobexhlp_session* session, gchar *path);
 
 static uint16_t find_rfcomm_uuid(void *user_data)
@@ -357,6 +358,71 @@ static void response_func(GObex *obex, GError *err, GObexPacket *rsp,
 
 }
 
+static struct gobexhlp_location *get_location(const char *path)
+{
+	struct gobexhlp_location *location;
+	gchar **directories;
+	guint i, len, fid = 0;
+
+	location = g_malloc0(sizeof(*location));
+	directories = g_strsplit(path, "/", -1);
+	len = g_strv_length(directories);
+
+	for (i = 0; i < len; i++)
+		if (directories[i][0] != '\0') /* protect multi slashes */
+			fid = i; /* last nonempty is a file */
+
+	location->file = g_strdup(directories[fid]);
+	directories[fid][0] = '\0'; /* remove file */
+	location->dir = g_strjoinv("/", directories);
+
+	g_strfreev(directories);
+
+	return location;
+}
+
+void free_location(struct gobexhlp_location *location)
+{
+	g_free(location->file);
+	g_free(location->dir);
+	g_free(location);
+}
+
+void gobexhlp_setpath(struct gobexhlp_session *session, const char *path)
+{
+	guint i = 0, split = 0;
+	gchar **path_v;
+	gsize len;
+
+	g_print("gobexhlp_setpath(%s)\n", path);
+	
+	if (g_str_has_prefix(path, session->setpath)) {
+		split = strlen(session->setpath);
+	}
+	else {
+		request_new(session, g_strdup_printf("setpath root"));
+		g_obex_setpath(session->obex, "", response_func,
+						session, &session->err);
+		request_wait_free(session);
+	}
+
+	path_v = g_strsplit(path+split, "/", -1);
+	len = g_strv_length(path_v);
+
+	for (i = 0; i < len; i++)
+		if (path_v[i][0] != '\0') {
+			request_new(session,
+				g_strdup_printf("setpath %s", path_v[i]));
+			g_obex_setpath(session->obex, path_v[i],
+					response_func, session, &session->err);
+			request_wait_free(session);
+		}
+
+	g_free(session->setpath);
+	session->setpath = g_strdup(path);
+
+	g_strfreev(path_v);
+}
 static gboolean async_get_consumer(const void *buf, gsize len,
 							gpointer user_data)
 {
