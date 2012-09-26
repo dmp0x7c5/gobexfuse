@@ -129,6 +129,29 @@ static int gobexfuse_mkdir(const char *path, mode_t mode)
 	return session->status;
 }
 
+static int gobexfuse_readdir(const char *path, void *buf,
+			fuse_fill_dir_t filler, off_t offset,
+				struct fuse_file_info *fi)
+{
+	int len, i;
+	gchar *string;
+	GList *files;
+
+	filler(buf, ".", NULL, 0);
+	filler(buf, "..", NULL, 0);
+	
+	files = gobexhlp_listfolder(session, path);
+	len = g_list_length(files);
+
+	for (i = 1; i < len; i++) { // element for i==0 is NULL
+		string = g_list_nth_data(files, i);
+		filler(buf, string, NULL, 0);
+	}
+
+
+	return session->status;
+}
+
 static int gobexfuse_open(const char *path, struct fuse_file_info *fi)
 {
 	struct gobexhlp_buffer *file_buffer;
@@ -226,6 +249,7 @@ static int gobexfuse_unlink(const char *path)
 
 static struct fuse_operations gobexfuse_oper = {
 	.getattr = gobexfuse_getattr,
+	.readdir = gobexfuse_readdir,
 	.mkdir = gobexfuse_mkdir,
 	.open = gobexfuse_open,
 	.read = gobexfuse_read,
