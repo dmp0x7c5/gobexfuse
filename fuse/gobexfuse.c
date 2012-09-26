@@ -89,7 +89,24 @@ void gobexfuse_destroy()
 	g_thread_join(main_gthread);
 }
 
+static int gobexfuse_utimens(const char *path, const struct timespec tv[2])
+{
+	/*
+	 * Important for mknod (touch) operation
+	 */
+	return 0;
+}
+
+static int gobexfuse_mknod(const char *path, mode_t mode, dev_t dev)
+{
+	gobexhlp_touch(session, path);
+
+	return 0;
+}
+
 static struct fuse_operations gobexfuse_oper = {
+	.mknod = gobexfuse_mknod,
+	.utimens = gobexfuse_utimens,
 	.init = gobexfuse_init,
 	.destroy = gobexfuse_destroy,
 };
