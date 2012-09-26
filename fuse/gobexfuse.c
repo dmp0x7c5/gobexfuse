@@ -89,6 +89,38 @@ void gobexfuse_destroy()
 	g_thread_join(main_gthread);
 }
 
+static int gobexfuse_open(const char *path, struct fuse_file_info *fi)
+{
+	struct gobexhlp_buffer *file_buffer;
+	g_print("gobexfuse_open(%s)\n", path);
+
+	file_buffer = gobexhlp_get(session, path);
+
+	if (file_buffer == NULL)
+		return -ENOENT;
+	
+	fi->fh = (uint64_t)file_buffer;
+
+	return session->status;
+}
+
+static int gobexfuse_read(const char *path, char *buf, size_t size,
+			off_t offset, struct fuse_file_info *fi)
+{
+	gsize asize;
+	struct gobexhlp_buffer *file_buffer = (struct gobexhlp_buffer*)fi->fh;
+
+	asize = file_buffer->size - offset;
+
+	if (asize > size) {
+		asize = size;
+	}
+	
+	memcpy(buf, file_buffer->data + offset, asize);
+
+	return asize;
+}
+
 static int gobexfuse_write(const char *path, const char *buf, size_t size,
 				off_t offset, struct fuse_file_info *fi)
 {
@@ -146,6 +178,8 @@ static int gobexfuse_mknod(const char *path, mode_t mode, dev_t dev)
 }
 
 static struct fuse_operations gobexfuse_oper = {
+	.open = gobexfuse_open,
+	.read = gobexfuse_read,
 	.write = gobexfuse_write,
 	.release = gobexfuse_release,
 	.truncate = gobexfuse_truncate,

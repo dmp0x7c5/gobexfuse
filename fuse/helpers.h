@@ -54,6 +54,8 @@ void gobexhlp_touch(struct gobexhlp_session* session, const char *path);
 void gobexhlp_put(struct gobexhlp_session* session,
 					struct gobexhlp_buffer *buffer,
 					const char *path);
+struct gobexhlp_buffer *gobexhlp_get(struct gobexhlp_session* session,
+					const char *path);
 struct stat *gobexhlp_getattr(struct gobexhlp_session* session,
 					const char *path);
 GList *gobexhlp_listfolder(struct gobexhlp_session* session, const char *path);
