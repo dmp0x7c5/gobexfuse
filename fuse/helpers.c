@@ -357,6 +357,64 @@ static void response_func(GObex *obex, GError *err, GObexPacket *rsp,
 
 }
 
+static gssize async_put_producer(void *buf, gsize len, gpointer user_data)
+{
+	gssize size;
+	struct gobexhlp_session *session = user_data;
+	struct gobexhlp_buffer *buffer = session->buffer;
+
+	size = buffer->size - buffer->tmpsize;
+
+	if (size > len)
+		size = len;
+
+	/*g_print("async_put_producer():[%d.%d.%d.%d]:\n", (int)len,
+				(int)buffer->tmpsize, (int)buffer->size,
+				(int)size);*/
+
+	g_obex_suspend(session->obex);
+	g_obex_resume(session->obex);
+	
+	if (size == 0)
+		return 0;
+
+	memcpy(buf, buffer->data + buffer->tmpsize, size);
+	buffer->tmpsize += size;
+
+	return size;
+}
+
+void gobexhlp_put(struct gobexhlp_session* session,
+				struct gobexhlp_buffer *buffer,
+				const char *path)
+{
+	struct gobexhlp_location *l;
+	l = get_location(path);
+
+	g_print("gobexhlp_put(%s%s)\n", l->dir, l->file);
+
+	if (g_strcmp0(path, session->vtouch_path) == 0 &&
+				session->vtouch == TRUE) {
+		session->vtouch = FALSE;
+		g_free(session->vtouch_path);
+	} else {
+		/* delete existing file */
+		if (session->rtouch == FALSE)
+			gobexhlp_delete(session, path);
+	}
+
+	gobexhlp_setpath(session, l->dir);
+	buffer->tmpsize = 0;
+	session->buffer = buffer;
+	request_new(session, g_strdup_printf("put %s", path));
+	g_obex_put_req(session->obex, async_put_producer,
+					complete_func, session, &session->err,
+					G_OBEX_HDR_NAME, l->file,
+					G_OBEX_HDR_INVALID);
+	free_location(l);
+	request_wait_free(session);
+}
+
 /* virtual file creation */
 void gobexhlp_touch(struct gobexhlp_session* session, const char *path)
 {

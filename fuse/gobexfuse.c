@@ -89,6 +89,47 @@ void gobexfuse_destroy()
 	g_thread_join(main_gthread);
 }
 
+static int gobexfuse_write(const char *path, const char *buf, size_t size,
+				off_t offset, struct fuse_file_info *fi)
+{
+	gsize nsize;
+	struct gobexhlp_buffer *file_buffer = (struct gobexhlp_buffer*)fi->fh;
+	
+	if (file_buffer->size < offset + size) {
+		nsize = offset + size;
+		file_buffer->data = g_realloc(file_buffer->data, nsize);
+		file_buffer->size = nsize;
+	} else {
+		nsize = file_buffer->size;
+	}
+
+	file_buffer->edited = TRUE;
+	memcpy(file_buffer->data + offset, buf, size);
+
+	return size;
+}
+
+static int gobexfuse_truncate(const char *path, off_t offset)
+{
+	/*
+	 *  Allow to change the size of a file.
+	 */
+	return 0;
+}
+
+static int gobexfuse_release(const char *path, struct fuse_file_info *fi)
+{
+	struct gobexhlp_buffer *file_buffer = (struct gobexhlp_buffer*)fi->fh;
+	g_print("gobexfuse_release(%s)\n", path);
+	
+	if (file_buffer->edited == TRUE)
+		gobexhlp_put(session, file_buffer, path); /* send to device */
+
+	g_free(file_buffer->data);
+	g_free(file_buffer);
+
+	return session->status;
+}
 static int gobexfuse_utimens(const char *path, const struct timespec tv[2])
 {
 	/*
@@ -105,6 +146,9 @@ static int gobexfuse_mknod(const char *path, mode_t mode, dev_t dev)
 }
 
 static struct fuse_operations gobexfuse_oper = {
+	.write = gobexfuse_write,
+	.release = gobexfuse_release,
+	.truncate = gobexfuse_truncate,
 	.mknod = gobexfuse_mknod,
 	.utimens = gobexfuse_utimens,
 	.init = gobexfuse_init,
