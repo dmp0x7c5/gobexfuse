@@ -588,3 +588,21 @@ void gobexhlp_touch_real(struct gobexhlp_session* session, gchar *path)
 	session->buffer = tmpbuf;
 }
 
+void gobexhlp_delete(struct gobexhlp_session* session, const char *path)
+{
+	struct gobexhlp_location *l;
+	l = get_location(path);
+
+	g_print("gobexhlp_delete(%s)\n", l->file);
+
+	gobexhlp_setpath(session, l->dir);
+	request_new(session, g_strdup_printf("delete %s", path));
+	g_obex_delete(session->obex, l->file, response_func, session,
+							&session->err);
+
+	g_hash_table_remove(session->file_stat, path);
+
+	free_location(l);
+	request_wait_free(session);
+}
+
