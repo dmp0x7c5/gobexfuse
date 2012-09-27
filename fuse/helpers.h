@@ -51,4 +51,7 @@ struct gobexhlp_session* gobexhlp_connect(const char *srcstr,
 						const char *dstsrc);
 void gobexhlp_disconnect(struct gobexhlp_session* session);
 void gobexhlp_touch(struct gobexhlp_session* session, const char *path);
+void gobexhlp_put(struct gobexhlp_session* session,
+					struct gobexhlp_buffer *buffer,
+					const char *path);
 
