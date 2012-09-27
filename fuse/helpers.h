@@ -58,4 +58,6 @@ void gobexhlp_put(struct gobexhlp_session* session,
 					const char *path);
 struct gobexhlp_buffer *gobexhlp_get(struct gobexhlp_session* session,
 					const char *path);
+struct stat *gobexhlp_getattr(struct gobexhlp_session* session,
+					const char *path);
 

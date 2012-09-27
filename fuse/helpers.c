@@ -444,6 +444,16 @@ static gboolean async_get_consumer(const void *buf, gsize len,
 	return TRUE;
 }
 
+struct stat *gobexhlp_getattr(struct gobexhlp_session* session,
+					const char *path)
+{
+	struct stat* stbuf;
+
+	stbuf = g_hash_table_lookup(session->file_stat, path);
+
+	return stbuf;
+}
+
 void gobexhlp_mkdir(struct gobexhlp_session* session, const char *path)
 {
 	struct gobexhlp_location *l;

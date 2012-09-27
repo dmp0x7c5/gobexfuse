@@ -89,6 +89,39 @@ void gobexfuse_destroy()
 	g_thread_join(main_gthread);
 }
 
+static int gobexfuse_getattr(const char *path, struct stat *stbuf)
+{
+	int res = 0;
+	struct stat *stfile;
+
+	memset(stbuf, 0, sizeof(struct stat));
+
+	if (strcmp(path, "/") == 0) {
+		stbuf->st_mode = S_IFDIR | 0755;
+		stbuf->st_nlink = 2;
+	} else {
+		stfile = gobexhlp_getattr(session, path);
+
+		if (stfile == NULL)
+			return -ENOENT;
+
+		if (stfile->st_mode == S_IFREG)
+			stbuf->st_mode = stfile->st_mode | 0666;
+		else /* S_IFDIR */
+			stbuf->st_mode = stfile->st_mode | 0755;
+
+		stbuf->st_nlink = 1;
+		stbuf->st_size = stfile->st_size;
+		stbuf->st_mtime = stbuf->st_atime = stbuf->st_ctime =
+						stfile->st_mtime;
+		stbuf->st_blksize = 512;
+		stbuf->st_blocks = (stbuf->st_size + stbuf->st_blksize)
+						/ stbuf->st_blksize;
+	}
+
+	return res;
+}
+
 static int gobexfuse_mkdir(const char *path, mode_t mode)
 {
 	gobexhlp_mkdir(session, path);
@@ -190,6 +223,7 @@ static int gobexfuse_unlink(const char *path)
 }
 
 static struct fuse_operations gobexfuse_oper = {
+	.getattr = gobexfuse_getattr,
 	.mkdir = gobexfuse_mkdir,
 	.open = gobexfuse_open,
 	.read = gobexfuse_read,
