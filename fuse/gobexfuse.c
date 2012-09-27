@@ -89,6 +89,13 @@ void gobexfuse_destroy()
 	g_thread_join(main_gthread);
 }
 
+static int gobexfuse_mkdir(const char *path, mode_t mode)
+{
+	gobexhlp_mkdir(session, path);
+
+	return session->status;
+}
+
 static int gobexfuse_open(const char *path, struct fuse_file_info *fi)
 {
 	struct gobexhlp_buffer *file_buffer;
@@ -176,6 +183,7 @@ static int gobexfuse_mknod(const char *path, mode_t mode, dev_t dev)
 }
 
 static struct fuse_operations gobexfuse_oper = {
+	.mkdir = gobexfuse_mkdir,
 	.open = gobexfuse_open,
 	.read = gobexfuse_read,
 	.write = gobexfuse_write,

@@ -444,6 +444,32 @@ static gboolean async_get_consumer(const void *buf, gsize len,
 	return TRUE;
 }
 
+void gobexhlp_mkdir(struct gobexhlp_session* session, const char *path)
+{
+	struct gobexhlp_location *l;
+	struct stat *stbuf;
+
+	g_print("gobexhlp_mkdir(%s)\n", path);
+
+	l = get_location(path);
+	gobexhlp_setpath(session, l->dir);
+
+	request_new(session, g_strdup_printf("mkdir %s", path));
+	/* g_obex_mkdir also sets path, to new folder */
+	g_obex_mkdir(session->obex, l->file, response_func, session,
+							&session->err);
+	g_free(session->setpath);
+	session->setpath = g_strdup(path);
+
+	stbuf = g_malloc0(sizeof(struct stat));
+	stbuf->st_mode = S_IFDIR;
+	stbuf->st_mtime = time(NULL);
+	g_hash_table_replace(session->file_stat, g_strdup(path), stbuf);
+
+	free_location(l);
+	request_wait_free(session);
+}
+
 struct gobexhlp_buffer *gobexhlp_get(struct gobexhlp_session* session,
 						const char *path)
 {
