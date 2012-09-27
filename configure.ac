@@ -187,6 +187,11 @@ AC_ARG_ENABLE(fuse, AC_HELP_STRING([--enable-fuse],
 	AC_SUBST(FUSE_CFLAGS)
 	AC_SUBST(FUSE_LIBS)
 	enable_fuse=${enableval}
+
+	PKG_CHECK_MODULES(GTHREAD, gthread-2.0, dummy=yes,
+					AC_MSG_ERROR(libgthread is required))
+	AC_SUBST(GTHREAD_CFLAGS)
+	AC_SUBST(GTHREAD_LIBS)
 ])
 AM_CONDITIONAL(FUSE, test "${enable_fuse}" != "no")
 
