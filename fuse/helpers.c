@@ -357,6 +357,59 @@ static void response_func(GObex *obex, GError *err, GObexPacket *rsp,
 
 }
 
+static gboolean async_get_consumer(const void *buf, gsize len,
+							gpointer user_data)
+{
+	struct gobexhlp_session *session = user_data;
+	struct gobexhlp_buffer *buffer = session->buffer;
+
+	if (buffer->size == 0)
+		buffer->data = g_malloc0(sizeof(char) * len);
+	else
+		buffer->data = g_realloc(buffer->data, buffer->size + len);
+
+
+	memcpy(buffer->data + buffer->size, buf, len);
+	buffer->size += len;
+
+	g_obex_suspend(session->obex);
+	g_obex_resume(session->obex);
+
+	return TRUE;
+}
+
+struct gobexhlp_buffer *gobexhlp_get(struct gobexhlp_session* session,
+						const char *path)
+{
+	struct gobexhlp_location *l;
+	struct gobexhlp_buffer *buffer;
+	struct stat *stfile;
+	l = get_location(path);
+
+	g_print("gobexhlp_get(%s%s)\n", l->dir, l->file);
+
+	stfile = gobexhlp_getattr(session, path);
+	if (stfile == NULL)
+		return NULL;
+
+	buffer = g_malloc0(sizeof(*buffer));
+
+	if (stfile->st_size == 0)
+		return buffer;
+
+	gobexhlp_setpath(session, l->dir);
+	request_new(session, g_strdup_printf("get %s", path));
+	session->buffer = buffer;
+	g_obex_get_req(session->obex, async_get_consumer,
+					complete_func, session, &session->err,
+					G_OBEX_HDR_NAME, l->file,
+					G_OBEX_HDR_INVALID);
+	free_location(l);
+	request_wait_free(session);
+
+	return buffer;
+}
+
 static gssize async_put_producer(void *buf, gsize len, gpointer user_data)
 {
 	gssize size;
