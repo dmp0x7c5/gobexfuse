@@ -60,4 +60,5 @@ struct gobexhlp_buffer *gobexhlp_get(struct gobexhlp_session* session,
 					const char *path);
 struct stat *gobexhlp_getattr(struct gobexhlp_session* session,
 					const char *path);
+GList *gobexhlp_listfolder(struct gobexhlp_session* session, const char *path);
 
