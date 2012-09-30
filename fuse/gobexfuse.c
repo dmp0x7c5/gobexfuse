@@ -33,6 +33,10 @@
 
 #include "helpers.h"
 
+struct gobexhlp_session* session = NULL;
+static GMainLoop *main_loop;
+static GThread *main_gthread;
+
 struct options {
 	char* dststr;
 	char* srcstr;
@@ -60,7 +64,34 @@ static struct fuse_opt gobexfuse_opts[] =
 	FUSE_OPT_END
 };
 
+gpointer main_loop_func(gpointer user_data)
+{
+	main_loop = g_main_loop_new(NULL, FALSE);
+	g_main_loop_run(main_loop);
+
+	return 0;
+}
+
+void* gobexfuse_init(struct fuse_conn_info *conn)
+{
+	main_gthread = g_thread_create(main_loop_func, NULL, TRUE, NULL);
+
+	conn->async_read = 0;
+	conn->want &= ~FUSE_CAP_ASYNC_READ;
+
+	return 0;
+}
+
+void gobexfuse_destroy()
+{
+	gobexhlp_disconnect(session);
+	g_main_loop_quit(main_loop);
+	g_thread_join(main_gthread);
+}
+
 static struct fuse_operations gobexfuse_oper = {
+	.init = gobexfuse_init,
+	.destroy = gobexfuse_destroy,
 };
 
 static int gobexfuse_opt_proc(void *data, const char *arg, int key,
@@ -110,6 +141,15 @@ int main(int argc, char *argv[])
 	}
 
 	g_thread_init(NULL);
+
+	session = gobexhlp_connect(options.srcstr, options.dststr);
+	if (session == NULL || session->io == NULL) {
+		g_printerr("Connection to %s failed\n", options.dststr);
+		gobexhlp_disconnect(session);
+		return -EHOSTUNREACH;
+	} else {
+		g_print("Connected\nMounting %s\n", options.dststr);
+	}
 
 	fuse_opt_add_arg(&args, "-s"); /* force single threaded mode */
 	retfuse = fuse_main(args.argc, args.argv, &gobexfuse_oper, NULL);

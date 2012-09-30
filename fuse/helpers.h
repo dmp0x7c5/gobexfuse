@@ -47,3 +47,8 @@ struct gobexhlp_session {
 	GError *err;
 };
 
+struct gobexhlp_session* gobexhlp_connect(const char *srcstr,
+						const char *dstsrc);
+void gobexhlp_disconnect(struct gobexhlp_session* session);
+
+
