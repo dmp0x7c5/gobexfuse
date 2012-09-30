@@ -238,6 +238,20 @@ static int gobexfuse_unlink(const char *path)
 	return session->status;
 }
 
+static int gobexfuse_mkdir(const char *path, mode_t mode)
+{
+	gobexhlp_mkdir(session, path);
+
+	return session->status;
+}
+
+static int gobexfuse_rename(const char *from, const char *to)
+{
+	gobexhlp_move(session, from, to);
+
+	return session->status;
+}
+
 static struct fuse_operations gobexfuse_oper = {
 	.readdir = gobexfuse_readdir,
 	.getattr = gobexfuse_getattr,
@@ -250,6 +264,8 @@ static struct fuse_operations gobexfuse_oper = {
 	.mknod = gobexfuse_mknod,
 	.unlink = gobexfuse_unlink,
 	.rmdir = gobexfuse_unlink,
+	.mkdir = gobexfuse_mkdir,
+	.rename = gobexfuse_rename,
 	.init = gobexfuse_init,
 	.destroy = gobexfuse_destroy,
 };
