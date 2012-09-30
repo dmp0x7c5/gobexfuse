@@ -580,3 +580,48 @@ struct gobexhlp_buffer *gobexhlp_get(struct gobexhlp_session* session,
 
 	return buffer;
 }
+
+static gssize async_put_producer(void *buf, gsize len, gpointer user_data)
+{
+	gssize size;
+	struct gobexhlp_session *session = user_data;
+	struct gobexhlp_buffer *buffer = session->buffer;
+
+	size = buffer->size - buffer->tmpsize;
+
+	if (size > len)
+		size = len;
+
+	g_obex_suspend(session->obex);
+	g_obex_resume(session->obex);
+
+	if (size == 0)
+		return 0;
+
+	memcpy(buf, buffer->data + buffer->tmpsize, size);
+	buffer->tmpsize += size;
+
+	return size;
+}
+
+void gobexhlp_put(struct gobexhlp_session* session,
+				struct gobexhlp_buffer *buffer,
+				const char *path)
+{
+	struct gobexhlp_location *l;
+	l = get_location(path);
+
+	g_print("gobexhlp_put(%s%s)\n", l->dir, l->file);
+
+	gobexhlp_setpath(session, l->dir);
+	buffer->tmpsize = 0;
+	session->buffer = buffer;
+	request_new(session, g_strdup_printf("put %s", path));
+	g_obex_put_req(session->obex, async_put_producer,
+					complete_func, session, &session->err,
+					G_OBEX_HDR_NAME, l->file,
+					G_OBEX_HDR_INVALID);
+	free_location(l);
+	request_wait_free(session);
+}
+
