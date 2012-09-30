@@ -144,9 +144,42 @@ static int gobexfuse_getattr(const char *path, struct stat *stbuf)
 	return res;
 }
 
+static int gobexfuse_open(const char *path, struct fuse_file_info *fi)
+{
+	struct gobexhlp_buffer *file_buffer;
+
+	file_buffer = gobexhlp_get(session, path);
+
+	if (file_buffer == NULL)
+		return -ENOENT;
+
+	fi->fh = (uint64_t)file_buffer;
+
+	return session->status;
+}
+
+static int gobexfuse_read(const char *path, char *buf, size_t size,
+			off_t offset, struct fuse_file_info *fi)
+{
+	gsize asize;
+	struct gobexhlp_buffer *file_buffer = (struct gobexhlp_buffer*)fi->fh;
+
+	asize = file_buffer->size - offset;
+
+	if (asize > size) {
+		asize = size;
+	}
+
+	memcpy(buf, file_buffer->data + offset, asize);
+
+	return asize;
+}
+
 static struct fuse_operations gobexfuse_oper = {
 	.readdir = gobexfuse_readdir,
 	.getattr = gobexfuse_getattr,
+	.open = gobexfuse_open,
+	.read = gobexfuse_read,
 	.init = gobexfuse_init,
 	.destroy = gobexfuse_destroy,
 };
