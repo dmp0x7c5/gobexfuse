@@ -52,5 +52,7 @@ struct gobexhlp_session* gobexhlp_connect(const char *srcstr,
 void gobexhlp_disconnect(struct gobexhlp_session* session);
 
 GList *gobexhlp_listfolder(struct gobexhlp_session* session, const char *path);
+struct stat *gobexhlp_getattr(struct gobexhlp_session* session,
+					const char *path);
 
 
