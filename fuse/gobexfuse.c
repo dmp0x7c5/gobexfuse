@@ -215,6 +215,21 @@ static int gobexfuse_release(const char *path, struct fuse_file_info *fi)
 	return session->status;
 }
 
+static int gobexfuse_utimens(const char *path, const struct timespec tv[2])
+{
+	/*
+	 * Important for mknod (touch) operation
+	 */
+	return 0;
+}
+
+static int gobexfuse_mknod(const char *path, mode_t mode, dev_t dev)
+{
+	gobexhlp_touch(session, path);
+
+	return 0;
+}
+
 static struct fuse_operations gobexfuse_oper = {
 	.readdir = gobexfuse_readdir,
 	.getattr = gobexfuse_getattr,
@@ -223,6 +238,8 @@ static struct fuse_operations gobexfuse_oper = {
 	.write = gobexfuse_write,
 	.truncate = gobexfuse_truncate,
 	.release = gobexfuse_release,
+	.utimens = gobexfuse_utimens,
+	.mknod = gobexfuse_mknod,
 	.init = gobexfuse_init,
 	.destroy = gobexfuse_destroy,
 };
