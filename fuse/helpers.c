@@ -618,6 +618,16 @@ void gobexhlp_put(struct gobexhlp_session* session,
 
 	g_print("gobexhlp_put(%s%s)\n", l->dir, l->file);
 
+	if (g_strcmp0(path, session->vtouch_path) == 0 &&
+				session->vtouch == TRUE) {
+		session->vtouch = FALSE;
+		g_free(session->vtouch_path);
+	} else {
+		/* delete existing file */
+		if (session->rtouch == FALSE)
+			gobexhlp_delete(session, path);
+	}
+
 	gobexhlp_setpath(session, l->dir);
 	buffer->tmpsize = 0;
 	session->buffer = buffer;
@@ -660,5 +670,23 @@ void gobexhlp_touch_real(struct gobexhlp_session* session, gchar *path)
 	g_free(buffer);
 
 	session->buffer = tmpbuf;
+}
+
+void gobexhlp_delete(struct gobexhlp_session* session, const char *path)
+{
+	struct gobexhlp_location *l;
+	l = get_location(path);
+
+	g_print("gobexhlp_delete(%s)\n", l->file);
+
+	gobexhlp_setpath(session, l->dir);
+	request_new(session, g_strdup_printf("delete %s", path));
+	g_obex_delete(session->obex, l->file, response_func, session,
+							&session->err);
+
+	g_hash_table_remove(session->file_stat, path);
+
+	free_location(l);
+	request_wait_free(session);
 }
 

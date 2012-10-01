@@ -60,4 +60,5 @@ void gobexhlp_put(struct gobexhlp_session* session,
 					struct gobexhlp_buffer *buffer,
 					const char *path);
 void gobexhlp_touch(struct gobexhlp_session* session, const char *path);
+void gobexhlp_delete(struct gobexhlp_session* session, const char *path);
 

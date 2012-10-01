@@ -230,6 +230,13 @@ static int gobexfuse_mknod(const char *path, mode_t mode, dev_t dev)
 	return 0;
 }
 
+static int gobexfuse_unlink(const char *path)
+{
+	gobexhlp_delete(session, path);
+
+	return session->status;
+}
+
 static struct fuse_operations gobexfuse_oper = {
 	.readdir = gobexfuse_readdir,
 	.getattr = gobexfuse_getattr,
@@ -240,6 +247,8 @@ static struct fuse_operations gobexfuse_oper = {
 	.release = gobexfuse_release,
 	.utimens = gobexfuse_utimens,
 	.mknod = gobexfuse_mknod,
+	.unlink = gobexfuse_unlink,
+	.rmdir = gobexfuse_unlink,
 	.init = gobexfuse_init,
 	.destroy = gobexfuse_destroy,
 };
