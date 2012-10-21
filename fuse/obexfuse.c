@@ -174,11 +174,55 @@ static int obexfuse_read(const char *path, char *buf, size_t size,
 	return asize;
 }
 
+static int obexfuse_write(const char *path, const char *buf, size_t size,
+				off_t offset, struct fuse_file_info *fi)
+{
+	gsize nsize;
+	struct gobexhlp_buffer *file_buffer = (struct gobexhlp_buffer*)fi->fh;
+
+	if (file_buffer->size < offset + size) {
+		nsize = offset + size;
+		file_buffer->data = g_realloc(file_buffer->data, nsize);
+		file_buffer->size = nsize;
+	} else {
+		nsize = file_buffer->size;
+	}
+
+	file_buffer->edited = TRUE;
+	memcpy(file_buffer->data + offset, buf, size);
+
+	return size;
+}
+
+static int obexfuse_truncate(const char *path, off_t offset)
+{
+	/*
+	 *  Allow to change the size of a file.
+	 */
+	return 0;
+}
+
+static int obexfuse_release(const char *path, struct fuse_file_info *fi)
+{
+	struct gobexhlp_buffer *file_buffer = (struct gobexhlp_buffer*)fi->fh;
+
+	if (file_buffer->edited == TRUE)
+		gobexhlp_put(session, file_buffer, path); /* send to device */
+
+	g_free(file_buffer->data);
+	g_free(file_buffer);
+
+	return session->status;
+}
+
 static struct fuse_operations obexfuse_oper = {
 	.readdir = obexfuse_readdir,
 	.getattr = obexfuse_getattr,
 	.open = obexfuse_open,
 	.read = obexfuse_read,
+	.write = obexfuse_write,
+	.truncate = obexfuse_truncate,
+	.release = obexfuse_release,
 	.init = obexfuse_init,
 	.destroy = obexfuse_destroy,
 };
