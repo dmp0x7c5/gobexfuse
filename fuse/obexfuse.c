@@ -215,6 +215,21 @@ static int obexfuse_release(const char *path, struct fuse_file_info *fi)
 	return session->status;
 }
 
+static int obexfuse_utimens(const char *path, const struct timespec tv[2])
+{
+	/*
+	 * Important for mknod (touch) operation
+	 */
+	return 0;
+}
+
+static int obexfuse_mknod(const char *path, mode_t mode, dev_t dev)
+{
+	gobexhlp_touch(session, path);
+
+	return 0;
+}
+
 static struct fuse_operations obexfuse_oper = {
 	.readdir = obexfuse_readdir,
 	.getattr = obexfuse_getattr,
@@ -223,6 +238,8 @@ static struct fuse_operations obexfuse_oper = {
 	.write = obexfuse_write,
 	.truncate = obexfuse_truncate,
 	.release = obexfuse_release,
+	.utimens = obexfuse_utimens,
+	.mknod = obexfuse_mknod,
 	.init = obexfuse_init,
 	.destroy = obexfuse_destroy,
 };

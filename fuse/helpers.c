@@ -56,6 +56,8 @@ struct gobexhlp_location {
 	gchar *file;
 };
 
+void gobexhlp_touch_real(struct gobexhlp_session* session, gchar *path);
+
 static uint16_t find_rfcomm_uuid(void *user_data)
 {
 	sdp_list_t *pds = (sdp_list_t*) user_data;
@@ -278,6 +280,12 @@ void request_new(struct gobexhlp_session *session,
 					gchar *name)
 {
 	g_print("REQUEST %s\n", name);
+
+	if (session->vtouch == TRUE) {
+		session->vtouch = FALSE;
+		gobexhlp_touch_real(session, session->vtouch_path);
+		g_free(session->vtouch_path);
+	}
 
 	if (session->request != NULL)
 		g_error("Another request (%s) active!\n",
@@ -620,4 +628,36 @@ void gobexhlp_put(struct gobexhlp_session* session,
 					G_OBEX_HDR_INVALID);
 	free_location(l);
 	request_wait_free(session);
+}
+
+/* virtual file creation */
+void gobexhlp_touch(struct gobexhlp_session* session, const char *path)
+{
+	struct stat *stbuf;
+
+	g_print("gobexhlp_touch(%s)\n", path);
+
+	stbuf = g_malloc0(sizeof(struct stat));
+	stbuf->st_mode = S_IFREG;
+	g_hash_table_replace(session->file_stat, g_strdup(path), stbuf);
+
+	session->vtouch = TRUE;
+	session->vtouch_path = g_strdup(path);
+}
+
+void gobexhlp_touch_real(struct gobexhlp_session* session, gchar *path)
+{
+	struct gobexhlp_buffer *buffer, *tmpbuf;
+
+	g_print("gobexhlp_touch_real(%s)\n", path);
+
+	tmpbuf = session->buffer; /* save buffer state */
+
+	buffer = g_malloc0(sizeof(struct gobexhlp_buffer));
+	session->rtouch = TRUE;
+	gobexhlp_put(session, buffer, path);
+	session->rtouch = FALSE;
+	g_free(buffer);
+
+	session->buffer = tmpbuf;
 }

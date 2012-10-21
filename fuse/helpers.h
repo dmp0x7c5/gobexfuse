@@ -59,3 +59,4 @@ struct gobexhlp_buffer *gobexhlp_get(struct gobexhlp_session* session,
 void gobexhlp_put(struct gobexhlp_session* session,
 					struct gobexhlp_buffer *buffer,
 					const char *path);
+void gobexhlp_touch(struct gobexhlp_session* session, const char *path);
