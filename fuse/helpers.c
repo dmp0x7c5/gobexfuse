@@ -509,3 +509,9 @@ GList *gobexhlp_listfolder(struct gobexhlp_session* session,
 
 	return session->lsfiles;
 }
+
+struct stat *gobexhlp_getattr(struct gobexhlp_session* session,
+					const char *path)
+{
+	return g_hash_table_lookup(session->file_stat, path);
+}
