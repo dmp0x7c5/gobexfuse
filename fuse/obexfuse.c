@@ -89,7 +89,30 @@ void obexfuse_destroy()
 	g_thread_join(main_gthread);
 }
 
+static int obexfuse_readdir(const char *path, void *buf,
+			fuse_fill_dir_t filler, off_t offset,
+				struct fuse_file_info *fi)
+{
+	int len, i;
+	gchar *string;
+	GList *files;
+
+	filler(buf, ".", NULL, 0);
+	filler(buf, "..", NULL, 0);
+
+	files = gobexhlp_listfolder(session, path);
+	len = g_list_length(files);
+
+	for (i = 1; i < len; i++) { /* element for i==0 is NULL */
+		string = g_list_nth_data(files, i);
+		filler(buf, string, NULL, 0);
+	}
+
+	return session->status;
+}
+
 static struct fuse_operations obexfuse_oper = {
+	.readdir = obexfuse_readdir,
 	.init = obexfuse_init,
 	.destroy = obexfuse_destroy,
 };
