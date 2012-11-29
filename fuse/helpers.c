@@ -58,77 +58,112 @@ struct gobexhlp_location {
 
 void gobexhlp_touch_real(struct gobexhlp_session* session, gchar *path);
 
-static uint16_t find_rfcomm_uuid(void *user_data)
-{
-	sdp_list_t *pds = (sdp_list_t*) user_data;
-	uint16_t channel = 0;
+static volatile sig_atomic_t __sdp_io_finished = 0;
 
-	for (;pds;pds = pds->next) {
-		sdp_data_t *d = (sdp_data_t*)pds->data;
-		int proto = 0;
-		for (; d; d = d->next) {
-			switch(d->dtd) {
-			case SDP_UUID16:
-			case SDP_UUID32:
-			case SDP_UUID128:
-				proto = sdp_uuid_to_proto(&d->val.uuid);
+/* adopted from client/bluetooth.c - search_callback() */
+static void search_callback(uint8_t type, uint16_t status,
+			uint8_t *rsp, size_t size, void *user_data)
+{
+	struct gobexhlp_session *session = user_data;
+	unsigned int scanned, bytesleft = size;
+	int seqlen = 0;
+	uint8_t dataType;
+	uint16_t port = 0;
+
+	if (status || type != SDP_SVC_SEARCH_ATTR_RSP)
+		goto done;
+
+	scanned = sdp_extract_seqtype(rsp, bytesleft, &dataType, &seqlen);
+	if (!scanned || !seqlen)
+		goto done;
+
+	rsp += scanned;
+	bytesleft -= scanned;
+	do {
+		sdp_record_t *rec;
+		sdp_list_t *protos;
+		sdp_data_t *data;
+		int recsize, ch = -1;
+
+		recsize = 0;
+		rec = sdp_extract_pdu(rsp, bytesleft, &recsize);
+		if (!rec)
 			break;
-			case SDP_UINT8:
-				if (proto == RFCOMM_UUID)
-					channel = d->val.int8;
-				break;
-			}
+
+		if (!recsize) {
+			sdp_record_free(rec);
+			break;
 		}
-	}
-	return channel;
+
+		if (!sdp_get_access_protos(rec, &protos)) {
+			port = sdp_get_proto_port(protos, RFCOMM_UUID);
+			sdp_list_foreach(protos,
+					(sdp_list_func_t) sdp_list_free, NULL);
+			sdp_list_free(protos, NULL);
+			protos = NULL;
+			goto done;
+		}
+
+		data = sdp_data_get(rec, 0x0200);
+		/* PSM must be odd and lsb of upper byte must be 0 */
+		if (data != NULL && (data->val.uint16 & 0x0101) == 0x0001)
+			ch = data->val.uint16;
+
+		sdp_record_free(rec);
+
+		if (ch > 0) {
+			port = ch;
+			break;
+		}
+
+		scanned += recsize;
+		rsp += recsize;
+		bytesleft -= recsize;
+	} while (scanned < size && bytesleft > 0);
+
+done:
+	session->channel = port;
+	__sdp_io_finished = 1;
 }
 
-static uint16_t get_ftp_channel(bdaddr_t *src, bdaddr_t *dst)
+static uint16_t get_ftp_channel(struct gobexhlp_session* session,
+					bdaddr_t *src, bdaddr_t *dst)
 {
+	sdp_list_t *search, *attrid;
+	uint32_t range = 0x0000ffff;
 	sdp_session_t *sdp;
-	sdp_list_t *r, *search_list, *attrid_list;
-	sdp_list_t *response_list = NULL;
 	uuid_t uuid;
+
+	sdp = sdp_connect(src, dst, SDP_RETRY_IF_BUSY);
+	if (sdp == NULL)
+		return 0;
 
 	/* FTP_SDP_UUID "00001106-0000-1000-8000-00805f9b34fb" */
 	uint8_t uuid_int[] = {0, 0, 0x11, 0x06, 0, 0, 0x10, 0, 0x80,
 					0, 0, 0x80, 0x5f, 0x9b, 0x34, 0xfb};
-	uint32_t range = 0x0000ffff;
-	uint16_t channel = 0;
-
-	sdp = sdp_connect(src, dst, SDP_RETRY_IF_BUSY );
-	if (sdp == NULL)
-		return channel;
-
 	sdp_uuid128_create(&uuid, uuid_int);
-	search_list = sdp_list_append(NULL, &uuid);
-	attrid_list = sdp_list_append(NULL, &range);
-	sdp_service_search_attr_req(sdp, search_list, SDP_ATTR_REQ_RANGE,
-					attrid_list, &response_list);
-	r = response_list;
 
-	for (; r;r = r->next) {
-		sdp_record_t *rec = (sdp_record_t*) r->data;
-		sdp_list_t *proto_list;
+	if (sdp_set_notify(sdp, search_callback, session) < 0)
+		goto done;
 
-		if (sdp_get_access_protos(rec, &proto_list ) == 0) {
-			sdp_list_t *p = proto_list;
-			for (; p; p = p->next) {
-				sdp_list_t *pds = (sdp_list_t*) p->data;
-				channel = find_rfcomm_uuid(pds);
-				sdp_list_free((sdp_list_t*) p->data, 0);
-			}
-			sdp_list_free(proto_list, 0);
-		}
-		sdp_record_free(rec);
+	search = sdp_list_append(NULL, &uuid);
+	attrid = sdp_list_append(NULL, &range);
+
+	if (sdp_service_search_attr_async(sdp,
+				search, SDP_ATTR_REQ_RANGE, attrid) < 0) {
+		sdp_list_free(attrid, NULL);
+		sdp_list_free(search, NULL);
+		goto done;
 	}
-	sdp_close(sdp);
 
-	g_free(search_list);
-	g_free(attrid_list);
-	g_free(response_list);
+	sdp_list_free(attrid, NULL);
+	sdp_list_free(search, NULL);
 
-	return channel;
+	while (!__sdp_io_finished)
+		sdp_process(sdp);
+
+done:
+	return session->channel;
 }
 
 /* taken from client/bluetooth.c - bluetooth_getpacketopt */
@@ -164,10 +199,10 @@ static void obex_callback(GObex *obex, GError *err, GObexPacket *rsp,
 							gpointer user_data)
 {
 	if (err != NULL) {
-		g_debug("Connect failed: %s\n", err->message);
+		g_print("OBEX Connect failed: %s\n", err->message);
 		g_error_free(err);
 	} else {
-		g_debug("Connect succeeded\n");
+		g_print("OBEX Connect succeeded\n");
 	}
 }
 
@@ -184,23 +219,35 @@ static void bt_io_callback(GIOChannel *io, GError *err, gpointer user_data)
 		return;
 	}
 
-	g_debug("Bluetooth socket connected\n");
+	g_print("Bluetooth socket connected\n");
 
-	g_io_channel_set_flags(session->io, G_IO_FLAG_NONBLOCK, NULL);
-	g_io_channel_set_close_on_unref(session->io, TRUE);
+	g_io_channel_set_close_on_unref(io, FALSE);
 
-	if (get_packet_opt(session->io, &tx_mtu, &rx_mtu) == 0) {
+	if (get_packet_opt(io, &tx_mtu, &rx_mtu) == 0) {
 		type = G_OBEX_TRANSPORT_PACKET;
-		g_debug("PACKET transport tx:%d rx:%d\n", tx_mtu, rx_mtu);
+		g_print("PACKET transport tx:%d rx:%d\n", tx_mtu, rx_mtu);
 	} else {
 		type = G_OBEX_TRANSPORT_STREAM;
-		g_debug("STREAM transport\n");
+		g_print("STREAM transport\n");
 	}
 
 	session->obex = g_obex_new(io, type, tx_mtu, rx_mtu);
-	g_obex_connect(session->obex, obex_callback, session, NULL,
+	if (session->obex == NULL) {
+		g_print("ERROR: obex is NULL");
+		raise(SIGTERM);
+	}
+
+	g_io_channel_set_close_on_unref(io, TRUE);
+
+	g_obex_connect(session->obex, obex_callback, session, &err,
 				G_OBEX_HDR_TARGET, OBEX_FTP_UUID,
 				OBEX_FTP_UUID_LEN, G_OBEX_HDR_INVALID);
+
+	if (err != NULL) {
+		g_print("ERROR: %s\n", err->message);
+		g_obex_unref(session->obex);
+		raise(SIGTERM);
+	}
 }
 
 struct gobexhlp_session* gobexhlp_connect(const char *srcstr,
@@ -220,7 +267,7 @@ struct gobexhlp_session* gobexhlp_connect(const char *srcstr,
 		str2ba(srcstr, &src);
 
 	str2ba(dststr, &dst);
-	channel = get_ftp_channel(&src, &dst);
+	channel = get_ftp_channel(session, &src, &dst);
 
 	if (channel == 0)
 		return NULL;

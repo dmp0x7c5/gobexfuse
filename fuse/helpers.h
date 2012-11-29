@@ -23,6 +23,9 @@
 #include <gobex/gobex.h>
 #include <glib.h>
 
+#include <bluetooth/sdp.h>
+#include <bluetooth/sdp_lib.h>
+
 struct gobexhlp_request;
 
 struct gobexhlp_buffer {
@@ -34,6 +37,7 @@ struct gobexhlp_buffer {
 
 struct gobexhlp_session {
 	GObex *obex;
+	uint16_t channel;
 	GList *lsfiles;
 	GIOChannel *io;
 	GHashTable *file_stat;
