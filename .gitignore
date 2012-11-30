@@ -39,3 +39,4 @@ unit/test-gobex
 unit/test-gobex-header
 unit/test-gobex-packet
 unit/test-gobex-transfer
+unit/test-gobex-apparam
