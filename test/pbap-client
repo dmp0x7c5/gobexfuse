@@ -135,7 +135,11 @@ if  __name__ == '__main__':
 		print "Size = %d\n" % (ret)
 
 		print "\n--- List vCard ---\n"
-		ret = pbap_client.interface().List(dbus.Dictionary())
+		try:
+			ret = pbap_client.interface().List(dbus.Dictionary())
+		except:
+			ret = []
+
 		params = dbus.Dictionary({ "Format" : "vcard30",
 					"Fields" : [ "VERSION", "FN", "TEL"] })
 		for item in ret:
