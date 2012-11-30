@@ -1,3 +1,9 @@
+ver 0.48:
+	Fix issue with phonebook contacts query.
+	Add support for phonebook client filters.
+	Add support for message status handling.
+	Add support for OBEX application parameter API.
+
 ver 0.47:
 	Update client session API.
 	Change D-Bus namespace to org.bluez.obex.
