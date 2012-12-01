@@ -174,11 +174,72 @@ static int obexfuse_read(const char *path, char *buf, size_t size,
 	return asize;
 }
 
+static int obexfuse_write(const char *path, const char *buf, size_t size,
+				off_t offset, struct fuse_file_info *fi)
+{
+	gsize nsize;
+	struct obexhlp_buffer *file_buffer = (struct obexhlp_buffer*)fi->fh;
+
+	if (file_buffer->size < offset + size) {
+		nsize = offset + size;
+		file_buffer->data = g_realloc(file_buffer->data, nsize);
+		file_buffer->size = nsize;
+	} else {
+		nsize = file_buffer->size;
+	}
+
+	file_buffer->edited = TRUE;
+	memcpy(file_buffer->data + offset, buf, size);
+
+	return size;
+}
+
+static int obexfuse_truncate(const char *path, off_t offset)
+{
+	/*
+	 *  Allow to change the size of a file.
+	 */
+	return 0;
+}
+
+static int obexfuse_release(const char *path, struct fuse_file_info *fi)
+{
+	struct obexhlp_buffer *file_buffer = (struct obexhlp_buffer*)fi->fh;
+
+	if (file_buffer->edited == TRUE)
+		obexhlp_put(session, file_buffer, path); /* send to device */
+
+	g_free(file_buffer->data);
+	g_free(file_buffer);
+
+	return session->status;
+}
+
+static int obexfuse_utimens(const char *path, const struct timespec tv[2])
+{
+	/*
+	 * Important for mknod (touch) operation
+	 */
+	return 0;
+}
+
+static int obexfuse_mknod(const char *path, mode_t mode, dev_t dev)
+{
+	obexhlp_touch(session, path);
+
+	return 0;
+}
+
 static struct fuse_operations obexfuse_oper = {
 	.readdir = obexfuse_readdir,
 	.getattr = obexfuse_getattr,
 	.open = obexfuse_open,
 	.read = obexfuse_read,
+	.write = obexfuse_write,
+	.truncate = obexfuse_truncate,
+	.release = obexfuse_release,
+	.utimens = obexfuse_utimens,
+	.mknod = obexfuse_mknod,
 	.init = obexfuse_init,
 	.destroy = obexfuse_destroy,
 };

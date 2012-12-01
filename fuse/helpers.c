@@ -56,6 +56,8 @@ struct obexhlp_location {
 	gchar *file;
 };
 
+void obexhlp_touch_real(struct obexhlp_session* session, gchar *path);
+
 static volatile sig_atomic_t __sdp_io_finished = 0;
 
 /* adopted from client/bluetooth.c - search_callback() */
@@ -325,6 +327,12 @@ void request_new(struct obexhlp_session *session,
 					gchar *name)
 {
 	g_print("REQUEST %s\n", name);
+
+	if (session->vtouch == TRUE) {
+		session->vtouch = FALSE;
+		obexhlp_touch_real(session, session->vtouch_path);
+		g_free(session->vtouch_path);
+	}
 
 	if (session->request != NULL)
 		g_error("Another request (%s) active!\n",
@@ -623,4 +631,80 @@ struct obexhlp_buffer *obexhlp_get(struct obexhlp_session* session,
 	request_wait_free(session);
 
 	return buffer;
+}
+
+static gssize async_put_producer(void *buf, gsize len, gpointer user_data)
+{
+	gssize size;
+	struct obexhlp_session *session = user_data;
+	struct obexhlp_buffer *buffer = session->buffer;
+
+	size = buffer->size - buffer->tmpsize;
+
+	if (size > len)
+		size = len;
+
+	g_obex_suspend(session->obex);
+	g_obex_resume(session->obex);
+
+	if (size == 0)
+		return 0;
+
+	memcpy(buf, buffer->data + buffer->tmpsize, size);
+	buffer->tmpsize += size;
+
+	return size;
+}
+
+void obexhlp_put(struct obexhlp_session* session,
+				struct obexhlp_buffer *buffer,
+				const char *path)
+{
+	struct obexhlp_location *l;
+	l = get_location(path);
+
+	g_print("obexhlp_put(%s%s)\n", l->dir, l->file);
+
+	obexhlp_setpath(session, l->dir);
+	buffer->tmpsize = 0;
+	session->buffer = buffer;
+	request_new(session, g_strdup_printf("put %s", path));
+	g_obex_put_req(session->obex, async_put_producer,
+					complete_func, session, &session->err,
+					G_OBEX_HDR_NAME, l->file,
+					G_OBEX_HDR_INVALID);
+	free_location(l);
+	request_wait_free(session);
+}
+
+/* virtual file creation */
+void obexhlp_touch(struct obexhlp_session* session, const char *path)
+{
+	struct stat *stbuf;
+
+	g_print("obexhlp_touch(%s)\n", path);
+
+	stbuf = g_malloc0(sizeof(struct stat));
+	stbuf->st_mode = S_IFREG;
+	g_hash_table_replace(session->file_stat, g_strdup(path), stbuf);
+
+	session->vtouch = TRUE;
+	session->vtouch_path = g_strdup(path);
+}
+
+void obexhlp_touch_real(struct obexhlp_session* session, gchar *path)
+{
+	struct obexhlp_buffer *buffer, *tmpbuf;
+
+	g_print("obexhlp_touch_real(%s)\n", path);
+
+	tmpbuf = session->buffer; /* save buffer state */
+
+	buffer = g_malloc0(sizeof(struct obexhlp_buffer));
+	session->rtouch = TRUE;
+	obexhlp_put(session, buffer, path);
+	session->rtouch = FALSE;
+	g_free(buffer);
+
+	session->buffer = tmpbuf;
 }
