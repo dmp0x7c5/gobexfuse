@@ -61,3 +61,4 @@ void obexhlp_put(struct obexhlp_session* session,
 					struct obexhlp_buffer *buffer,
 					const char *path);
 void obexhlp_touch(struct obexhlp_session* session, const char *path);
+void obexhlp_delete(struct obexhlp_session* session, const char *path);

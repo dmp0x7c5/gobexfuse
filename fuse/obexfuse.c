@@ -230,6 +230,13 @@ static int obexfuse_mknod(const char *path, mode_t mode, dev_t dev)
 	return 0;
 }
 
+static int obexfuse_unlink(const char *path)
+{
+	obexhlp_delete(session, path);
+
+	return session->status;
+}
+
 static struct fuse_operations obexfuse_oper = {
 	.readdir = obexfuse_readdir,
 	.getattr = obexfuse_getattr,
@@ -240,6 +247,8 @@ static struct fuse_operations obexfuse_oper = {
 	.release = obexfuse_release,
 	.utimens = obexfuse_utimens,
 	.mknod = obexfuse_mknod,
+	.unlink = obexfuse_unlink,
+	.rmdir = obexfuse_unlink,
 	.init = obexfuse_init,
 	.destroy = obexfuse_destroy,
 };
