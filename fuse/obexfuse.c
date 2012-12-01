@@ -144,9 +144,41 @@ static int obexfuse_getattr(const char *path, struct stat *stbuf)
 	return res;
 }
 
+static int obexfuse_open(const char *path, struct fuse_file_info *fi)
+{
+	struct obexhlp_buffer *file_buffer;
+
+	file_buffer = obexhlp_get(session, path);
+
+	if (file_buffer == NULL)
+		return -ENOENT;
+
+	fi->fh = (uint64_t)file_buffer;
+
+	return session->status;
+}
+
+static int obexfuse_read(const char *path, char *buf, size_t size,
+			off_t offset, struct fuse_file_info *fi)
+{
+	gsize asize;
+	struct obexhlp_buffer *file_buffer = (struct obexhlp_buffer*)fi->fh;
+
+	asize = file_buffer->size - offset;
+
+	if (asize > size)
+		asize = size;
+
+	memcpy(buf, file_buffer->data + offset, asize);
+
+	return asize;
+}
+
 static struct fuse_operations obexfuse_oper = {
 	.readdir = obexfuse_readdir,
 	.getattr = obexfuse_getattr,
+	.open = obexfuse_open,
+	.read = obexfuse_read,
 	.init = obexfuse_init,
 	.destroy = obexfuse_destroy,
 };

@@ -562,3 +562,65 @@ struct stat *obexhlp_getattr(struct obexhlp_session* session,
 {
 	return g_hash_table_lookup(session->file_stat, path);
 }
+
+static struct obexhlp_location *get_location(const char *path)
+{
+	struct obexhlp_location *location;
+	gchar **directories;
+	guint i, len, fid = 0;
+
+	location = g_malloc0(sizeof(*location));
+	directories = g_strsplit(path, "/", -1);
+	len = g_strv_length(directories);
+
+	for (i = 0; i < len; i++)
+		if (directories[i][0] != '\0') /* protect multi slashes */
+			fid = i; /* last nonempty is a file */
+
+	location->file = g_strdup(directories[fid]);
+	directories[fid][0] = '\0'; /* remove file */
+	location->dir = g_strjoinv("/", directories);
+
+	g_strfreev(directories);
+
+	return location;
+}
+
+void free_location(struct obexhlp_location *location)
+{
+	g_free(location->file);
+	g_free(location->dir);
+	g_free(location);
+}
+
+struct obexhlp_buffer *obexhlp_get(struct obexhlp_session* session,
+						const char *path)
+{
+	struct obexhlp_location *l;
+	struct obexhlp_buffer *buffer;
+	struct stat *stfile;
+	l = get_location(path);
+
+	g_print("obexhlp_get(%s%s)\n", l->dir, l->file);
+
+	stfile = obexhlp_getattr(session, path);
+	if (stfile == NULL)
+		return NULL;
+
+	buffer = g_malloc0(sizeof(*buffer));
+
+	if (stfile->st_size == 0)
+		return buffer;
+
+	obexhlp_setpath(session, l->dir);
+	request_new(session, g_strdup_printf("get %s", path));
+	session->buffer = buffer;
+	g_obex_get_req(session->obex, async_get_consumer,
+					complete_func, session, &session->err,
+					G_OBEX_HDR_NAME, l->file,
+					G_OBEX_HDR_INVALID);
+	free_location(l);
+	request_wait_free(session);
+
+	return buffer;
+}
