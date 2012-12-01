@@ -53,3 +53,5 @@ struct obexhlp_session* obexhlp_connect(const char *srcstr,
 void obexhlp_disconnect(struct obexhlp_session* session);
 
 GList *obexhlp_listfolder(struct obexhlp_session* session, const char *path);
+struct stat *obexhlp_getattr(struct obexhlp_session* session,
+					const char *path);

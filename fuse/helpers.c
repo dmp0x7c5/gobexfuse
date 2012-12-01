@@ -556,3 +556,9 @@ GList *obexhlp_listfolder(struct obexhlp_session* session,
 
 	return session->lsfiles;
 }
+
+struct stat *obexhlp_getattr(struct obexhlp_session* session,
+					const char *path)
+{
+	return g_hash_table_lookup(session->file_stat, path);
+}
