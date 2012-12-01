@@ -736,3 +736,49 @@ void obexhlp_delete(struct obexhlp_session* session, const char *path)
 	free_location(l);
 	request_wait_free(session);
 }
+
+void obexhlp_mkdir(struct obexhlp_session* session, const char *path)
+{
+	struct obexhlp_location *l;
+	struct stat *stbuf;
+
+	g_print("obexhlp_mkdir(%s)\n", path);
+
+	l = get_location(path);
+	obexhlp_setpath(session, l->dir);
+
+	request_new(session, g_strdup_printf("mkdir %s", path));
+	/* g_obex_mkdir also sets path, to new folder */
+	g_obex_mkdir(session->obex, l->file, response_func, session,
+							&session->err);
+	g_free(session->setpath);
+	session->setpath = g_strdup(path);
+
+	stbuf = g_malloc0(sizeof(struct stat));
+	stbuf->st_mode = S_IFDIR;
+	stbuf->st_mtime = time(NULL);
+	g_hash_table_replace(session->file_stat, g_strdup(path), stbuf);
+
+	free_location(l);
+	request_wait_free(session);
+}
+
+void obexhlp_move(struct obexhlp_session* session, const char *oldpath,
+						const char* newpath)
+{
+	struct obexhlp_location *l_from, *l_to;
+
+	l_to = get_location(newpath);
+	l_from = get_location(oldpath);
+	obexhlp_setpath(session, l_from->dir);
+
+	g_print("obexhlp_move(%s to %s)\n", l_from->file, l_to->file);
+
+	request_new(session, g_strdup_printf("move %s:%s",
+					oldpath, newpath));
+	g_obex_move(session->obex, l_from->file, l_to->file, response_func,
+						session, &session->err);
+	free_location(l_to);
+	free_location(l_from);
+	request_wait_free(session);
+}
