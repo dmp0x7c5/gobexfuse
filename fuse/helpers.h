@@ -47,3 +47,7 @@ struct obexhlp_session {
 	int status;
 	GError *err;
 };
+
+struct obexhlp_session* obexhlp_connect(const char *srcstr,
+						const char *dstsrc);
+void obexhlp_disconnect(struct obexhlp_session* session);
