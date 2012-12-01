@@ -51,3 +51,5 @@ struct obexhlp_session {
 struct obexhlp_session* obexhlp_connect(const char *srcstr,
 						const char *dstsrc);
 void obexhlp_disconnect(struct obexhlp_session* session);
+
+GList *obexhlp_listfolder(struct obexhlp_session* session, const char *path);

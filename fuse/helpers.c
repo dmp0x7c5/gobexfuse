@@ -428,3 +428,131 @@ void obexhlp_setpath(struct obexhlp_session *session, const char *path)
 
 	g_strfreev(path_v);
 }
+
+static void listfolder_xml_element(GMarkupParseContext *ctxt,
+			const gchar *element, const gchar **names,
+			const gchar **values, gpointer user_data,
+			GError **gerr)
+{
+	gchar *key, *pathname, *name = NULL;
+	struct obexhlp_session *session = user_data;
+	struct stat *stbuf;
+	gint i = 0;
+
+	stbuf = g_malloc0(sizeof(struct stat));
+
+	if ((strcasecmp("file", element) == 0)) {
+		stbuf->st_mode = S_IFREG;
+	} else if ((strcasecmp("folder", element)) == 0) {
+		stbuf->st_mode = S_IFDIR;
+		stbuf->st_mtime = time(NULL);
+	} else {
+		g_free(stbuf);
+		return;
+	}
+
+	for (key = (gchar *) names[i]; key; key = (gchar *) names[++i]) {
+		if (g_str_equal("name", key) == TRUE) {
+			session->lsfiles = g_list_append(session->lsfiles,
+						g_strdup(values[i]));
+			name = g_strdup(values[i]);
+
+		} else if (g_str_equal("size", key) == TRUE) {
+			guint64 size;
+			size = g_ascii_strtoll(values[i], NULL, 10);
+			stbuf->st_size = size;
+
+		} else if (g_str_equal("created", key) == TRUE) {
+			GTimeVal time;
+			GDateTime *datetime;
+			g_time_val_from_iso8601(values[i], &time);
+			datetime = g_date_time_new_from_timeval_utc(&time);
+			stbuf->st_mtime = g_date_time_to_unix(datetime);
+		}
+	}
+
+	if (g_str_equal("/", session->setpath) == TRUE)
+		pathname = g_strdup_printf("/%s", name);
+	else
+		pathname = g_strdup_printf("%s/%s", session->setpath, name);
+
+	g_hash_table_replace(session->file_stat, pathname, stbuf);
+	g_free(name);
+}
+
+static const GMarkupParser parser = {
+	listfolder_xml_element,
+	NULL, NULL, NULL, NULL
+};
+
+static void complete_listfolder_func(GObex *obex, GError *err,
+				gpointer user_data)
+{
+	GMarkupParseContext *ctxt;
+	struct obexhlp_session *session = user_data;
+	struct obexhlp_buffer *buffer = session->buffer;
+
+	if (err == NULL) {
+		ctxt = g_markup_parse_context_new(&parser, 0, session, NULL);
+		g_markup_parse_context_parse(ctxt, buffer->data, buffer->size,
+							NULL);
+		g_markup_parse_context_free(ctxt);
+	}
+
+	complete_func(obex, err, user_data);
+}
+
+static gboolean async_get_consumer(const void *buf, gsize len,
+							gpointer user_data)
+{
+	struct obexhlp_session *session = user_data;
+	struct obexhlp_buffer *buffer = session->buffer;
+
+	if (buffer->size == 0)
+		buffer->data = g_malloc0(sizeof(char) * len);
+	else
+		buffer->data = g_realloc(buffer->data, buffer->size + len);
+
+	memcpy(buffer->data + buffer->size, buf, len);
+	buffer->size += len;
+
+	g_obex_suspend(session->obex);
+	g_obex_resume(session->obex);
+
+	return TRUE;
+}
+
+GList *obexhlp_listfolder(struct obexhlp_session* session,
+					const char *path)
+{
+	struct obexhlp_buffer *buffer;
+	GObexPacket *req;
+	guint reqpkt;
+
+	obexhlp_setpath(session, path);
+
+	g_print("obexhlp_listfolder(%s)\n", path);
+
+	if (session->lsfiles != NULL) {
+		g_list_free_full(session->lsfiles, g_free);
+		session->lsfiles = NULL;
+	}
+
+	session->lsfiles = g_list_alloc();
+	buffer = g_malloc0(sizeof(struct obexhlp_buffer));
+	session->buffer = buffer;
+
+	request_new(session, g_strdup_printf("listfolder %s", path));
+	req = g_obex_packet_new(G_OBEX_OP_GET, TRUE, G_OBEX_HDR_INVALID);
+	g_obex_packet_add_bytes(req, G_OBEX_HDR_TYPE, OBEX_FTP_LS,
+						strlen(OBEX_FTP_LS) + 1);
+	reqpkt = g_obex_get_req_pkt(session->obex, req,
+				async_get_consumer,
+				complete_listfolder_func,
+				session, &session->err);
+	request_wait_free(session);
+	g_free(buffer->data);
+	g_free(buffer);
+
+	return session->lsfiles;
+}
