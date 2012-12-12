@@ -96,12 +96,11 @@ static void search_callback(uint8_t type, uint16_t status,
 		}
 
 		if (!sdp_get_access_protos(rec, &protos)) {
-			port = sdp_get_proto_port(protos, RFCOMM_UUID);
+			ch = sdp_get_proto_port(protos, RFCOMM_UUID);
 			sdp_list_foreach(protos,
 					(sdp_list_func_t) sdp_list_free, NULL);
 			sdp_list_free(protos, NULL);
 			protos = NULL;
-			goto done;
 		}
 
 		data = sdp_data_get(rec, 0x0200);
@@ -535,7 +534,6 @@ GList *obexhlp_listfolder(struct obexhlp_session* session,
 {
 	struct obexhlp_buffer *buffer;
 	GObexPacket *req;
-	guint reqpkt;
 
 	obexhlp_setpath(session, path);
 
@@ -554,8 +552,7 @@ GList *obexhlp_listfolder(struct obexhlp_session* session,
 	req = g_obex_packet_new(G_OBEX_OP_GET, TRUE, G_OBEX_HDR_INVALID);
 	g_obex_packet_add_bytes(req, G_OBEX_HDR_TYPE, OBEX_FTP_LS,
 						strlen(OBEX_FTP_LS) + 1);
-	reqpkt = g_obex_get_req_pkt(session->obex, req,
-				async_get_consumer,
+	g_obex_get_req_pkt(session->obex, req, async_get_consumer,
 				complete_listfolder_func,
 				session, &session->err);
 	request_wait_free(session);
